@@ -327,6 +327,15 @@ def run(fs, args):
         else:
             flags[flag] = True
 
+    variables = {}
+    for variable in args.variable:
+        if "=" in variable:
+            var_name, var_value = variable.split("=", 1)
+            variables[var_name] = var_value
+        else:
+            logger.error(f"Invalid variable format: {variable}. Use NAME=VALUE.")
+            exit(1)
+
     fs.cm.db.mapping_set(args.mapping)
 
     if args.lockfile is not None:
@@ -340,6 +349,15 @@ def run(fs, args):
 
     try:
         flags = dict(core.get_flags(flags["target"]), **flags)
+    except SyntaxError as e:
+        logger.error(str(e))
+        exit(1)
+    except RuntimeError as e:
+        logger.error(str(e))
+        exit(1)
+
+    try:
+        variables = dict(core.get_variables(flags["target"], variables), **variables)
     except SyntaxError as e:
         logger.error(str(e))
         exit(1)
@@ -684,6 +702,12 @@ def get_parser():
     parser_run.add_argument(
         "--flag",
         help="Set custom use flags. Can be specified multiple times",
+        action="append",
+        default=[],
+    )
+    parser_run.add_argument(
+        "--variable",
+        help="Set custom variables. Can be specified multiple times",
         action="append",
         default=[],
     )

@@ -181,6 +181,23 @@ class Core:
             raise RuntimeError(f"'{self.name}' has no target '{target_name}'")
         return flags
 
+        """ Get variables from target """
+
+    def get_variables(self, target_name):
+        variables = {}
+
+        cd_targets = self._coredata.get_targets({})
+        if target_name in cd_targets:
+            target = cd_targets[target_name]
+
+            if target:
+                if "variables" in target:
+                    variables = target["variables"].copy()
+
+        else:
+            raise RuntimeError(f"'{self.name}' has no target '{target_name}'")
+        return variables
+
     def get_filters(self, flags):
         target_name, target = self._get_target(flags)
         return target.get("filters", [])
