@@ -188,7 +188,7 @@ class Edalizer:
                 files_root = core.files_root
 
             # Add copyto files
-            for file in core.get_files(_flags):
+            for file in core.get_files(_flags, self.variables):
                 if file.get("copyto"):
                     src = os.path.join(files_root, file["name"])
                     self._copyto(src, file.get("copyto"))
@@ -318,7 +318,7 @@ class Edalizer:
         self.edam = {
             "version": "0.2.1",
             "name": self.system_name or top_core.name.sanitized_name,
-            "toplevel": top_core.get_toplevel(self.flags),
+            "toplevel": top_core.get_toplevel(self.flags, self.variables),
         }
 
         for snippet in first_snippets + snippets + last_snippets:

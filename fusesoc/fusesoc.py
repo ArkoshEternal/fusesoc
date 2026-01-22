@@ -90,8 +90,10 @@ class Fusesoc:
     def get_generators(self):
         return self.cm.get_generators()
 
-    def get_work_root(self, core, flags):
-        flow = core.get_flow(flags)
+    def get_work_root(self, core, flags, variables=None):
+        if variables is None:
+            variables = {}
+        flow = core.get_flow(flags, variables)
 
         target = flags["target"]
 
@@ -116,7 +118,7 @@ class Fusesoc:
 
     def get_backend(self, core, flags, variables, backendargs=[]):
 
-        work_root = self.get_work_root(core, flags)
+        work_root = self.get_work_root(core, flags, variables)
 
         if not self.config.no_export:
             export_root = os.path.join(work_root, "src")
@@ -126,7 +128,7 @@ class Fusesoc:
 
         edam_file = os.path.join(work_root, core.name.sanitized_name + ".eda.yml")
 
-        flow = core.get_flow(flags)
+        flow = core.get_flow(flags, variables)
 
         backend_class = None
         if flow:
