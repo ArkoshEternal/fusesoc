@@ -114,7 +114,7 @@ class Fusesoc:
 
         return work_root
 
-    def get_backend(self, core, flags, backendargs=[]):
+    def get_backend(self, core, flags, variables, backendargs=[]):
 
         work_root = self.get_work_root(core, flags)
 
@@ -150,6 +150,7 @@ class Fusesoc:
         edalizer = Edalizer(
             toplevel=core.name,
             flags=flags,
+            variables=variables,
             core_manager=self.cm,
             work_root=work_root,
             export_root=export_root,
