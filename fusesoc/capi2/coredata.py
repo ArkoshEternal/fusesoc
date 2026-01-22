@@ -187,8 +187,8 @@ class CoreData:
     def get_scripts(self, flags, variables):
         return self._deepcopy_and_expand("scripts", flags, variables) or {}
 
-    def get_targets(self, flags):
-        return self._deepcopy_and_expand("targets", flags, {}) or {}
+    def get_targets(self, flags, variables):
+        return self._deepcopy_and_expand("targets", flags, variables) or {}
 
     def get_parameters(self, flags, variables):
         return self._deepcopy_and_expand("parameters", flags, variables) or {}
