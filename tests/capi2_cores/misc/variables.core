@@ -1,0 +1,16 @@
+CAPI=2:
+# Copyright FuseSoC contributors
+# Licensed under the 2-Clause BSD License, see LICENSE for details.
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: ::variables:0
+
+targets:
+    novars: {}
+    emptyvars:
+        variables: {}
+    multiple_vars:
+        variables:
+            var1: "2"
+            var2: blue
+            var3: "false"

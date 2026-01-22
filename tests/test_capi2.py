@@ -819,3 +819,17 @@ def test_inheritance():
 
     capi2_data = parser.read(core_file)
     assert expected == capi2_data
+
+
+def test_variables():
+    import os
+
+    from fusesoc.capi2.coreparser import Core2Parser
+    from fusesoc.core import Core
+
+    core_file = os.path.join(tests_dir, "capi2_cores", "misc", "variables.core")
+    core = Core(Core2Parser(), core_file)
+
+    variables = core.get_variables("multiple_vars")
+    expected_vars = {"var1": "2", "var2": "blue", "var3": "false"}
+    assert expected_vars == variables
