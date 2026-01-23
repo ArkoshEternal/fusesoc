@@ -821,7 +821,7 @@ def test_inheritance():
     assert expected == capi2_data
 
 
-def test_variables():
+def test_variables_local():
     import os
 
     from fusesoc.capi2.coreparser import Core2Parser
@@ -830,6 +830,68 @@ def test_variables():
     core_file = os.path.join(tests_dir, "capi2_cores", "misc", "variables.core")
     core = Core(Core2Parser(), core_file)
 
+    # Test variable section parsing
     variables = core.get_variables("multiple_vars")
     expected_vars = {"var1": "2", "var2": "blue", "var3": "false"}
     assert expected_vars == variables
+
+    # Test no variables not erroring
+    no_vars = core.get_variables("novars")
+    assert {} == no_vars
+
+    # Test generator with variable substitution
+    var_with_gen_variables = core.get_variables("var_with_gen")
+    gen_with_vars = core.get_ttptttg(
+        {"is_toplevel": True, "target": "var_with_gen"}, var_with_gen_variables
+    )
+    expected_gen = [
+        {
+            "name": "generate_with_vars",
+            "generator": "generator1",
+            "config": {"PARAM1": "8"},
+            "pos": "append",
+        },
+    ]
+    assert expected_gen == gen_with_vars
+
+    # Test Paramters with Variable Substitution
+    var_with_param_variables = core.get_variables("var_with_params")
+    params_with_vars = core.get_parameters(
+        {"is_toplevel": True, "target": "var_with_params"}, {}, var_with_param_variables
+    )
+    expected_params = {
+        "INTPARAM": {
+            "datatype": "int",
+            "default": 10,
+            "paramtype": "vlogparam",
+        },
+        "STRPARAM": {
+            "datatype": "str",
+            "default": "hello",
+            "paramtype": "vlogparam",
+        },
+        "REALPARAM": {
+            "datatype": "real",
+            "default": 1.61803,
+            "paramtype": "vlogparam",
+        },
+    }
+    assert expected_params == params_with_vars
+
+    # Test Dependencies with Variable Substitution
+    var_with_dep_variables = core.get_variables("var_with_deps")
+    deps_with_vars = core.get_depends(
+        {"is_toplevel": True, "target": "var_with_deps"}, var_with_dep_variables
+    )
+    assert len(deps_with_vars) == 1
+    dep = deps_with_vars[0]
+    assert str(dep) == ":used:core:2.0"
+
+    # Test Files with Variable Substitution
+    var_with_file_variables = core.get_variables("var_with_files")
+    files_with_vars = core.get_files(
+        {"is_toplevel": True, "target": "var_with_files"}, var_with_file_variables
+    )
+    assert len(files_with_vars) == 1
+    assert files_with_vars[0]["name"] == "test.v"
+    assert files_with_vars[0]["file_type"] == "verilogSource"
