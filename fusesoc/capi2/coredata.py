@@ -3,9 +3,12 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 import copy
+import logging
 import re
 
 from fusesoc.capi2.exprs import Exprs
+
+logger = logging.getLogger(__name__)
 
 
 class CoreData:
@@ -18,15 +21,20 @@ class CoreData:
         self._append_lists(self._capi_data)
 
     def _expand_variables(self, text, variables):
-        """Replace {{ var_name }} variables['var_name']"""
+        """Replace $var_name with variables['var_name']"""
         if not isinstance(text, str) or not variables:
             return text
 
         def replace_var(match):
             var_name = match.group(1)
+            if var_name not in variables:
+                logger.warning(
+                    f"Variable '${var_name}' found but not defined in variables. "
+                    f"Available variables: {list(variables.keys())}"
+                )
             return str(variables.get(var_name, match.group(0)))
 
-        return re.sub(r"\{\{\s*(\w+)\s*\}\}", replace_var, text)
+        return re.sub(r"\$(\w+)", replace_var, text)
 
     def _expand_use(self, data, flags, variables):
         if isinstance(data, dict):
@@ -38,7 +46,7 @@ class CoreData:
                 if isinstance(v, str) and len(v) > 0:
                     if "?" in v:
                         data[k] = Exprs(v).expand(flags)
-                    # Expand variables denoted by {{ var_name }}
+                    # Expand variables denoted by $var_name
                     if isinstance(data[k], str) and variables:
                         data[k] = self._expand_variables(data[k], variables)
                 if isinstance(k, str) and "?" in k:
@@ -46,6 +54,12 @@ class CoreData:
                     if len(expanded_k) == 0:
                         remove.append(k)
                     elif expanded_k != k:
+                        append[expanded_k] = v
+                        remove.append(k)
+                # Expand variables in dict keys
+                if isinstance(k, str) and variables and "$" in k:
+                    expanded_k = self._expand_variables(k, variables)
+                    if expanded_k != k:
                         append[expanded_k] = v
                         remove.append(k)
                 if isinstance(v, (dict, list)):
@@ -67,7 +81,7 @@ class CoreData:
                                 data[idx] = expanded
                             else:
                                 remove.append(idx)
-                    # Expand variables denoted by {{ var_name }}
+                    # Expand variables denoted by $var_name
                     if isinstance(data[idx], str) and variables:
                         data[idx] = self._expand_variables(data[idx], variables)
                 elif isinstance(i, (dict, list)):
