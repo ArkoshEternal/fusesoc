@@ -895,3 +895,51 @@ def test_variables_local():
     assert len(files_with_vars) == 1
     assert files_with_vars[0]["name"] == "test.v"
     assert files_with_vars[0]["file_type"] == "verilogSource"
+
+    # Test Target Which Relies on Downstream Variables Resolving in Generator
+    # Test Target Which Relies on Downstream Variables Resolving in Generator
+    vars_for_downstream = core.get_variables("var_with_downstream_var")
+
+    # Load the downstream core that is a dependency
+    downstream_core_file = os.path.join(
+        tests_dir, "capi2_cores", "misc", "variables_downstream.core"
+    )
+    downstream_core = Core(Core2Parser(), downstream_core_file)
+
+    # Get the generators from the downstream core's default target using the upstream variables
+    # The upstream target defines WIDTH_DOWNSTREAM="32" which should override the downstream's default of "16"
+    gen_from_downstream = downstream_core.get_ttptttg(
+        {"is_toplevel": True, "target": "default"},
+        vars_for_downstream,
+    )
+
+    expected_gen_downstream = [
+        {
+            "name": "generate_with_vars_downstream",
+            "generator": "generator1",
+            "config": {"PARAM1": "32"},
+            "pos": "append",
+        },
+    ]
+    # Verify that the downstream core's generator uses the upstream variable value
+    assert expected_gen_downstream == gen_from_downstream
+
+    # Test negative case: downstream core with its own default variables
+    # The downstream's own default is WIDTH_DOWNSTREAM="16", which should NOT be overridden
+    # when we explicitly use the downstream's own variables
+    downstream_default_vars = downstream_core.get_variables("default")
+    gen_from_downstream_with_default = downstream_core.get_ttptttg(
+        {"is_toplevel": True, "target": "default"},
+        downstream_default_vars,
+    )
+
+    expected_gen_downstream_default = [
+        {
+            "name": "generate_with_vars_downstream",
+            "generator": "generator1",
+            "config": {"PARAM1": "16"},
+            "pos": "append",
+        },
+    ]
+    # Verify that the downstream core's generator uses its own default value when no override is provided
+    assert expected_gen_downstream_default == gen_from_downstream_with_default

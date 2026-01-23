@@ -22,6 +22,9 @@ filesets:
     files:
       - $FILENAME
     file_type: verilogSource
+  fs_with_downstream_vars:
+    depend:
+        - ::variables_downstream:0
 
 targets:
   novars: {}
@@ -61,6 +64,11 @@ targets:
       - fs_with_file_vars
     variables:
       FILENAME: "test.v"
+  var_with_downstream_var:
+    variables:
+      WIDTH_DOWNSTREAM: "32"
+    filesets:
+      - fs_with_downstream_vars
 
 parameters:
   INTPARAM:

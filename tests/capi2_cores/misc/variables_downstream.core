@@ -11,16 +11,16 @@ generate:
     parameters:
       PARAM1: $WIDTH_DOWNSTREAM
 
-  filesets:
-    default:
-      depend:
-        - generators
+filesets:
+  default:
+    depend:
+      - generators
 
-  targets:
-    default:
-      filesets:
-        - default
-      variables:
-        WIDTH_DOWNSTREAM: "16"
-      generate:
-        - generate_with_vars_downstream
+targets:
+  default:
+    filesets:
+      - default
+    variables:
+      WIDTH_DOWNSTREAM: "16"
+    generate:
+      - generate_with_vars_downstream
