@@ -75,7 +75,12 @@ class Core:
         else:
             return "local"
 
-    def export(self, dst_dir, flags={}, variables={}):
+    def export(self, dst_dir, flags=None, variables=None):
+        if flags is None: 
+            flags = {}
+        if variables is None: 
+            variables = {}
+
         src_files = [f["name"] for f in self.get_files(flags, variables)]
 
         for k, v in self._get_vpi(flags, variables).items():
@@ -187,16 +192,11 @@ class Core:
         variables = {}
 
         cd_targets = self._coredata.get_targets({}, {})
-        if target_name in cd_targets:
-            target = cd_targets[target_name]
-
-            if target:
-                if "variables" in target:
-                    variables = target["variables"].copy()
-
-        else:
+        target = cd_targets.get(target_name, {})
+        if not target:
             raise RuntimeError(f"'{self.name}' has no target '{target_name}'")
-        return variables
+        
+        return target["variables"].copy()
 
     def get_filters(self, flags, variables):
         target_name, target = self._get_target(flags, variables)
