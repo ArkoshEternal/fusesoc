@@ -7,8 +7,11 @@ import logging
 import os
 from configparser import ConfigParser as CP
 from pathlib import Path
+from typing import Self, TypeVar, cast
 
 from fusesoc.librarymanager import Library
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +19,7 @@ logger = logging.getLogger(__name__)
 class Config:
     default_section = "main"
 
-    def __init__(self, path=None):
+    def __init__(self, path: str | None = None) -> None:
         self._cp = CP(default_section=Config.default_section)
 
         if path is None:
@@ -44,9 +47,9 @@ class Config:
         os.makedirs(self.cache_root, exist_ok=True)
 
         # Get the environment variable for further cores
-        env_cores_root = []
+        env_cores_root: list[str] = []
         if os.getenv("FUSESOC_CORES"):
-            env_cores_root = os.getenv("FUSESOC_CORES").split(":")
+            env_cores_root = str(os.getenv("FUSESOC_CORES")).split(":")
             env_cores_root.reverse()
 
         self.libraries = [
@@ -57,7 +60,7 @@ class Config:
         logger.debug("library_root=" + self.library_root)
         logger.debug("ssh-trustfile=" + (self.ssh_trustfile or "none"))
 
-    def _parse_library(self):
+    def _parse_library(self) -> list[Library]:
         # Parse library sections
         libraries = []
         library_sections = [x for x in self._cp.sections() if x.startswith("library")]
@@ -87,13 +90,13 @@ class Config:
 
         return libraries
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self) -> None:
         self.write()
 
-    def _resolve_path_from_cfg(self, path):
+    def _resolve_path_from_cfg(self, path: str) -> str:
         # We only call resolve_path_from_cfg if self._cp.get(...) returned
         # something. That, in turn, only happens if we actually managed to read
         # a config file, meaning that files_read will have been nonempty in the
@@ -107,22 +110,22 @@ class Config:
             cfg_file_dir = os.path.dirname(os.path.realpath(self._path))
             return os.path.normpath(os.path.join(cfg_file_dir, expanded))
 
-    def _path_from_cfg(self, name):
+    def _path_from_cfg(self, name: str) -> str | None:
         as_str = self._cp.get(Config.default_section, name, fallback=None)
         return self._resolve_path_from_cfg(as_str) if as_str is not None else None
 
-    def _paths_from_cfg(self, name):
+    def _paths_from_cfg(self, name: str) -> list[str | None]:
         paths = self._cp.get(Config.default_section, name, fallback="")
         return [self._resolve_path_from_cfg(p) for p in paths.split()]
 
-    def _get_build_root(self):
+    def _get_build_root(self) -> str:
         from_cfg = self._path_from_cfg("build_root")
         if from_cfg is not None:
             return from_cfg
 
         return os.path.abspath("build")
 
-    def _get_cache_root(self):
+    def _get_cache_root(self) -> str:
         from_cfg = self._path_from_cfg("cache_root")
         if from_cfg is not None:
             return from_cfg
@@ -132,10 +135,10 @@ class Config:
         )
         return str(Path(xdg_cache_home) / "fusesoc")
 
-    def _get_ssh_trustfile(self):
+    def _get_ssh_trustfile(self) -> str | None:
         return self._path_from_cfg("ssh-trustfile")
 
-    def _get_library_root(self):
+    def _get_library_root(self) -> str:
         from_cfg = self._path_from_cfg("library_root")
         if from_cfg is not None:
             return from_cfg
@@ -145,146 +148,162 @@ class Config:
         )
         return str(Path(xdg_data_home) / "fusesoc")
 
-    def _get_ignored_dirs(self):
+    def _get_ignored_dirs(self) -> list[str | None]:
         return self._paths_from_cfg("ignored_dirs")
 
-    def _set_default_section(self, name, val):
+    def _set_default_section(
+        self, name: str, val: str | bool | list[str] | None
+    ) -> None:
         self._cp.set(Config.default_section, name, str(val))
 
-    def _arg_or_val(self, arg, val):
+    def _arg_or_val(self, arg: str, val: T) -> T:
         if hasattr(self, arg):
-            return getattr(self, arg)
+            return cast(T, getattr(self, arg))
         else:
             return val
 
     @property
-    def filters(self):
+    def filters(self) -> list[str]:
         return self._cp.get(
             Config.default_section, "filters", fallback=""
         ).split() + getattr(self, "args_filters", [])
 
     @filters.setter
-    def filters(self, val):
+    def filters(self, val: list[str]) -> None:
         self._set_default_section("filters", val)
 
     @property
-    def build_root(self):
-        return self._arg_or_val("args_build_root", self._get_build_root())
+    def build_root(self) -> str:
+        return str(self._arg_or_val("args_build_root", self._get_build_root()))
 
     @build_root.setter
-    def build_root(self, val):
+    def build_root(self, val: str) -> None:
         self._set_default_section("build_root", val)
 
     @property
-    def work_root(self):
-        return self._arg_or_val("args_work_root", self._path_from_cfg("work_root"))
+    def work_root(self) -> str:
+        return str(self._arg_or_val("args_work_root", self._path_from_cfg("work_root")))
 
     @work_root.setter
-    def work_root(self, val):
+    def work_root(self, val: str) -> None:
         self._set_default_section("work_root", val)
 
     @property
-    def cache_root(self):
+    def cache_root(self) -> str:
         return self._get_cache_root()
 
     @cache_root.setter
-    def cache_root(self, val):
+    def cache_root(self, val: str) -> None:
         self._set_default_section("cache_root", val)
 
     @property
-    def ssh_trustfile(self):
+    def ssh_trustfile(self) -> str | None:
         return self._get_ssh_trustfile()
 
     @ssh_trustfile.setter
-    def ssh_trustfile(self, val):
+    def ssh_trustfile(self, val: str | None) -> None:
         self._set_default_section("ssh-trustfile", val)
 
     @property
-    def library_root(self):
+    def library_root(self) -> str:
         return self._get_library_root()
 
     @library_root.setter
-    def library_root(self, val):
+    def library_root(self, val: str) -> None:
         self._set_default_section("library_root", val)
 
     @property
-    def cores_root(self):
-        return self._arg_or_val("args_cores_root", self._paths_from_cfg("cores_root"))
+    def cores_root(self) -> str:
+        return str(
+            self._arg_or_val("args_cores_root", self._paths_from_cfg("cores_root"))
+        )
 
     @cores_root.setter
-    def cores_root(self, val):
+    def cores_root(self, val: str) -> None:
         self._set_default_section("cores_root", val)
 
     @property
-    def ignored_dirs(self):
+    def ignored_dirs(self) -> list[str | None]:
         return self._get_ignored_dirs()
 
     @ignored_dirs.setter
-    def ignored_dirs(self, val):
+    def ignored_dirs(self, val: list[str]) -> None:
         self._set_default_section(
             "ignored_dirs", " ".join(val) if isinstance(val, list) else val
         )
 
     @property
-    def resolve_env_vars_early(self):
-        return self._arg_or_val(
-            "args_resolve_env_vars_early",
-            self._cp.getboolean(
-                Config.default_section, "resolve_env_vars_early", fallback=False
-            ),
+    def resolve_env_vars_early(self) -> bool:
+        return bool(
+            self._arg_or_val(
+                "args_resolve_env_vars_early",
+                self._cp.getboolean(
+                    Config.default_section, "resolve_env_vars_early", fallback=False
+                ),
+            )
         )
 
     @resolve_env_vars_early.setter
-    def resolve_env_vars_early(self, val):
+    def resolve_env_vars_early(self, val: bool) -> None:
         self._set_default_section("resolve_env_vars_early", val)
 
     @property
-    def allow_additional_properties(self):
-        return self._arg_or_val(
-            "args_allow_additional_properties",
-            self._cp.getboolean(
-                Config.default_section, "allow_additional_properties", fallback=False
-            ),
+    def allow_additional_properties(self) -> bool:
+        return bool(
+            self._arg_or_val(
+                "args_allow_additional_properties",
+                self._cp.getboolean(
+                    Config.default_section,
+                    "allow_additional_properties",
+                    fallback=False,
+                ),
+            )
         )
 
     @allow_additional_properties.setter
-    def allow_additional_properties(self, val):
+    def allow_additional_properties(self, val: bool) -> None:
         self._set_default_section("allow_additional_properties", val)
 
     @property
-    def verbose(self):
+    def verbose(self) -> bool:
         # Runtime config only, not possible to set in config file
-        return self._arg_or_val("args_verbose", False)
+        return bool(self._arg_or_val("args_verbose", False))
 
     @property
-    def no_export(self):
-        return self._arg_or_val(
-            "args_no_export",
-            self._cp.getboolean(Config.default_section, "no_export", fallback=False),
+    def no_export(self) -> bool:
+        return bool(
+            self._arg_or_val(
+                "args_no_export",
+                self._cp.getboolean(
+                    Config.default_section, "no_export", fallback=False
+                ),
+            )
         )
 
     @no_export.setter
-    def no_export(self, val):
+    def no_export(self, val: bool) -> None:
         self._set_default_section("no_export", val)
 
     @property
-    def system_name(self):
-        return self._arg_or_val(
-            "args_system_name",
-            self._cp.get(Config.default_section, "system_name", fallback=None),
+    def system_name(self) -> str:
+        return str(
+            self._arg_or_val(
+                "args_system_name",
+                self._cp.get(Config.default_section, "system_name", fallback=None),
+            )
         )
 
     @system_name.setter
-    def system_name(self, val):
+    def system_name(self, val: str | None) -> None:
         self._set_default_section("system_name", val)
 
-    def write(self):
+    def write(self) -> None:
         conf_file_name = getattr(self, "_path", None) or "fusesoc.conf"
 
         with open(conf_file_name, "w") as conf_file:
             self._cp.write(conf_file)
 
-    def add_library(self, library):
+    def add_library(self, library: Library) -> None:
         from fusesoc.provider.provider import get_provider
 
         section_name = "library." + library.name
@@ -314,7 +333,7 @@ class Config:
         try:
             provider = get_provider(library.sync_type)
         except ImportError:
-            raise RuntimeError("Invalid sync-type '{}'".format(library["sync-type"]))
+            raise RuntimeError(f"Invalid sync-type '{library.sync_type}'")
 
         provider.init_library(library)
 
