@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 class Library:
     def __init__(
         self,
-        name,
-        location,
-        sync_type=None,
-        sync_uri=None,
-        sync_version=None,
-        auto_sync=True,
-    ):
+        name: str,
+        location: str,
+        sync_type: str | None = None,
+        sync_uri: str | None = None,
+        sync_version: str | None = None,
+        auto_sync: bool = True,
+    ) -> None:
         if sync_type and sync_type not in ["local", "git", "url"]:
             raise ValueError(
                 "Library {} ({}) Invalid sync-type '{}'".format(
@@ -40,8 +40,8 @@ class Library:
         self.sync_version = sync_version
         self.auto_sync = auto_sync
 
-    def update(self, force=False):
-        def lib(s):
+    def update(self, force: bool = False) -> None:
+        def lib(s: str) -> str:
             return self.name + " : " + s
 
         if self.sync_type == "local":
@@ -73,22 +73,23 @@ class Library:
 
 
 class LibraryManager:
-    def __init__(self, library_root):
-        self._libraries = []
-        self.library_root = library_root
+    def __init__(self, library_root: str) -> None:
+        self._libraries: list[Library] = []
+        self.library_root: str = library_root
 
-    def add_library(self, library):
+    def add_library(self, library: Library) -> None:
         self._libraries.append(library)
 
-    def get_library(self, value, key="name"):
+    def get_library(self, value: str, key: str = "name") -> Library | None:
         for library in self._libraries:
             if getattr(library, key) == value:
                 return library
+        raise ValueError(f"Could not find library with {key} '{value}'")
 
-    def get_libraries(self):
+    def get_libraries(self) -> list[Library]:
         return self._libraries
 
-    def update(self, library_names):
+    def update(self, library_names: list[str]) -> None:
         libraries = []
         for name in library_names:
             library = self.get_library(name)
