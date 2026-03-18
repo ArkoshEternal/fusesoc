@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any, Type, cast
+from typing import TYPE_CHECKING, Any, Type
 
 import yaml
 
@@ -179,15 +179,13 @@ def yaml_fread(
 
 def yaml_read(data: str, resolve_env_vars: bool = False) -> Any:
     try:
-        data_processed = cast(
-            str, (Inheritance.yaml_merge_2_fusesoc_merge(cast(Inheritance, data)))
-        )
+        data_processed = Inheritance().yaml_merge_2_fusesoc_merge(data)
         capi_data: Any = {}
         if resolve_env_vars:
             capi_data = yaml.load(os.path.expandvars(data_processed), Loader=YamlLoader)
         else:
             capi_data = yaml.load(data_processed, Loader=YamlLoader)
-        return cast(Any, Inheritance.elaborate_inheritance(capi_data))
+        return Inheritance().elaborate_inheritance(capi_data)
     except (yaml.parser.ParserError, yaml.scanner.ScannerError) as e:
         raise SyntaxError(str(e))
 
