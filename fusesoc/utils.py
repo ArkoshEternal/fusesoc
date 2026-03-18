@@ -7,15 +7,20 @@ import os
 import subprocess
 import sys
 import warnings
+from typing import TYPE_CHECKING, Any, Type, cast
 
 import yaml
 
-try:
-    from yaml import CSafeDumper as YamlDumper
-    from yaml import CSafeLoader as YamlLoader
-except ImportError:
-    from yaml import SafeDumper as YamlDumper
-    from yaml import SafeLoader as YamlLoader
+if TYPE_CHECKING:
+    YamlDumper: Type[yaml.SafeDumper]
+    YamlLoader: Type[yaml.SafeLoader]
+else:
+    try:
+        from yaml import CSafeDumper as YamlDumper
+        from yaml import CSafeLoader as YamlLoader
+    except ImportError:
+        from yaml import SafeDumper as YamlDumper
+        from yaml import SafeLoader as YamlLoader
 
 from fusesoc.capi2.inheritance import Inheritance
 
@@ -23,18 +28,18 @@ logger = logging.getLogger(__name__)
 
 
 class Launcher:
-    def __init__(self, cmd, args=[], cwd=None):
+    def __init__(self, cmd: str, args: list[str] = [], cwd: str | None = None) -> None:
         self.cmd = cmd
         self.args = args
         self.cwd = cwd
 
-    def run(self):
+    def run(self) -> None:
         """Runs the cmd with args after converting them all to strings via str"""
         logger.debug(self.cwd or "./")
         logger.debug("    " + str(self))
         try:
             subprocess.check_call(
-                map(str, [self.cmd] + self.args),
+                list(map(str, [self.cmd] + self.args)),
                 cwd=self.cwd,
             ),
         except FileNotFoundError:
@@ -45,22 +50,22 @@ class Launcher:
             self.errormsg = '"{}" exited with an error code. See stderr for details.'
             raise RuntimeError(self.errormsg.format(str(self)))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return " ".join(map(str, [self.cmd] + self.args))
 
 
-def is_mingw():
+def is_mingw() -> bool:
     if sys.platform == "msys":
         return True
     return sys.platform == "win32" and "GCC" in sys.version
 
 
-def cygpath(win_path):
+def cygpath(win_path: str) -> str:
     path = subprocess.check_output(["cygpath", "-u", win_path])
     return path.decode("ascii").strip()
 
 
-def unique_dirs(file_list):
+def unique_dirs(file_list: list[str]) -> list[str]:
     return list({os.path.dirname(f) for f in file_list})
 
 
@@ -84,11 +89,11 @@ COLOR_MAP = {
 
 
 class ColoredFormatter(logging.Formatter):
-    def __init__(self, msg, monochrome):
+    def __init__(self, msg: str | None, monochrome: bool):
         super().__init__(msg)
         self.monochrome = monochrome
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         uncolored = super().format(record)
         levelname = record.levelname
         if not self.monochrome and (levelname in COLOR_MAP):
@@ -99,7 +104,9 @@ class ColoredFormatter(logging.Formatter):
         return formatted
 
 
-def setup_logging(level, monchrome=False, log_file=None):
+def setup_logging(
+    level: logging._Level, monchrome: bool = False, log_file: str | None = None
+) -> None:
     """
     Utility function for setting up logging.
     """
@@ -111,12 +118,18 @@ def setup_logging(level, monchrome=False, log_file=None):
     # logging infrastructure. Warnings end up in the py.warnings category.
     logging.captureWarnings(True)
 
-    def _formatwarning(message, category, filename, lineno, line=None):
+    def _formatwarning(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        line: str | None = None,
+    ) -> str:
         # Format FutureWarnings, which are intended for end users, in a way
         # that strips out all code references, which are meaningless to an end
         # user.
         if category is FutureWarning:
-            return message
+            return str(message)
 
         return _formatwarning_orig(message, category, filename, lineno, line)
 
@@ -140,7 +153,7 @@ def setup_logging(level, monchrome=False, log_file=None):
         package_logger.addHandler(ch)
         package_logger.setLevel(level)
     # Warning only packages
-    warning_only_packages = []
+    warning_only_packages: list[str] = []
     for package in warning_only_packages:
         package_logger = logging.getLogger(package)
         package_logger.addHandler(ch)
@@ -148,38 +161,42 @@ def setup_logging(level, monchrome=False, log_file=None):
     logger.debug(f"Setup logging at level {level}.")
 
 
-def yaml_fwrite(filepath, content, preamble=""):
+def yaml_fwrite(filepath: str, content: Any, preamble: str = "") -> None:
     with open(filepath, "w") as f:
         if len(preamble) > 0:
             f.write(preamble + "\n")
         f.write(yaml.dump(content, Dumper=YamlDumper, sort_keys=False))
 
 
-def yaml_fread(filepath, resolve_env_vars=False, remove_preamble=False):
+def yaml_fread(
+    filepath: str, resolve_env_vars: bool = False, remove_preamble: bool = False
+) -> Any:
     with open(filepath) as f:
         if remove_preamble:
             f.readline()
         return yaml_read(f.read(), resolve_env_vars)
 
 
-def yaml_read(data, resolve_env_vars=False):
+def yaml_read(data: str, resolve_env_vars: bool = False) -> Any:
     try:
-        data = Inheritance.yaml_merge_2_fusesoc_merge(data)
-        capi_data = {}
+        data_processed = cast(
+            str, (Inheritance.yaml_merge_2_fusesoc_merge(cast(Inheritance, data)))
+        )
+        capi_data: Any = {}
         if resolve_env_vars:
-            capi_data = yaml.load(os.path.expandvars(data), Loader=YamlLoader)
+            capi_data = yaml.load(os.path.expandvars(data_processed), Loader=YamlLoader)
         else:
-            capi_data = yaml.load(data, Loader=YamlLoader)
-        return Inheritance.elaborate_inheritance(capi_data)
+            capi_data = yaml.load(data_processed, Loader=YamlLoader)
+        return cast(Any, Inheritance.elaborate_inheritance(capi_data))
     except (yaml.parser.ParserError, yaml.scanner.ScannerError) as e:
         raise SyntaxError(str(e))
 
 
-def yaml_dump(data):
+def yaml_dump(data: Any) -> Any:
     return yaml.dump(data)
 
 
-def merge_dict(d1, d2, concat_list_appends_only=False):
+def merge_dict(d1: dict, d2: dict, concat_list_appends_only: bool = False) -> dict:
     for key, value in d2.items():
         if isinstance(value, dict):
             d1[key] = merge_dict(d1.get(key, {}), value)
