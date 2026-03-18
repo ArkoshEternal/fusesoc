@@ -2,17 +2,19 @@
 # Licensed under the 2-Clause BSD License, see LICENSE for details.
 # SPDX-License-Identifier: BSD-2-Clause
 
+from __future__ import annotations
+
 import copy
 from functools import total_ordering
 
 
 @total_ordering
 class Vlnv:
-    def __init__(self, s, default_relation=">="):
-        def _is_rev(s):
+    def __init__(self, s: str, default_relation: str = ">=") -> None:
+        def _is_rev(s: str) -> bool:
             return s.startswith("r") and s[1:].isdigit()
 
-        def _is_version(s):
+        def _is_version(s: str) -> bool:
             return s[0].isdigit()
 
         if not s:
@@ -99,7 +101,7 @@ class Vlnv:
         # Create sanitized name
         self.sanitized_name = str(self).lstrip(":").replace(":", "_")
 
-    def __str__(self):
+    def __str__(self) -> str:
         revision = ""
         if self.revision > 0:
             revision = "-r" + str(self.revision)
@@ -110,17 +112,17 @@ class Vlnv:
 
     __repr__ = __str__
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(str(self))
 
-    def depstr(self):
+    def depstr(self) -> str:
         if self.relation == "==":
             relation = ""
         else:
             relation = self.relation
         return relation + str(self)
 
-    def simpleVLNVs(self):
+    def simpleVLNVs(self) -> list[Vlnv]:
         if self.relation in "^~":
             # A VLNV which implies a range of versions
             # ^ for same major release
@@ -148,7 +150,9 @@ class Vlnv:
             # A normal VLNV, so we can return ourselves
             return [self]
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Vlnv):
+            return False
         return (self.vendor, self.library, self.name, self.version) == (
             other.vendor,
             other.library,
@@ -156,7 +160,9 @@ class Vlnv:
             other.version,
         )
 
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Vlnv):
+            return False
         return (self.vendor, self.library, self.name, self.version) < (
             other.vendor,
             other.library,
@@ -164,16 +170,16 @@ class Vlnv:
             other.version,
         )
 
-    def vln_str(self):
+    def vln_str(self) -> str:
         """Returns a string with <vendor>:<library>:<name>"""
         return f"{self.vendor}:{self.library}:{self.name}"
 
 
-def compare_relation(vlvn_a: Vlnv, relation: str, vlvn_b: Vlnv):
-    """Compare two VLVNs with the provided relation. Returns boolan."""
+def compare_relation(vlvn_a: Vlnv, relation: str, vlvn_b: Vlnv) -> bool:
+    """Compare two VLVNs with the provided relation."""
     from okonomiyaki.versions import EnpkgVersion
 
-    def version_str(v):
+    def version_str(v: Vlnv) -> str:
         return f"{v.version}-{v.revision}"
 
     valid_version = False
