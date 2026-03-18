@@ -7,17 +7,19 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
+
+# import sys
 import tempfile
 
 import yaml
 
 from fusesoc import utils
+from fusesoc.capi2.core import Core
 
 logger = logging.getLogger(__name__)
 
 
-def sign(core, key_file_name, old_sig_file):
+def sign(core: Core, key_file_name: str) -> str:
     """
     Generate signature for a core file and return as signature yaml document.
     """
@@ -51,7 +53,7 @@ def sign(core, key_file_name, old_sig_file):
     }
 
     # Dump multi line signature in yaml | style.
-    def str_presenter(dumper, data):
+    def str_presenter(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
         if len(data.splitlines()) > 1:  # check for multiline string
             return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
         return dumper.represent_scalar("tag:yaml.org,2002:str", data)
@@ -60,7 +62,7 @@ def sign(core, key_file_name, old_sig_file):
     return yaml.dump(sig_data)
 
 
-def verify(core_obj, trust_file_name, sig_file_name):
+def verify(core_obj: Core, trust_file_name: str, sig_file_name: str | None) -> dict:
     """
     Verify signatures of a core and return a dictionary of users whos
     signatures were tried and their result (True or False).
@@ -75,10 +77,10 @@ def verify(core_obj, trust_file_name, sig_file_name):
 
     """
     logger.debug("verify core:       " + core_obj.core_file)
-    logger.debug("against signature: " + sig_file_name)
+    logger.debug("against signature: " + str(sig_file_name))
     logger.debug("with trustfile:    " + trust_file_name)
     core_canonical = core_obj.signed_data()
-    sig_data = utils.yaml_fread(sig_file_name)
+    sig_data = utils.yaml_fread(str(sig_file_name))
     if "coresig" not in sig_data:
         raise RuntimeError("Signature file missing coresig member.")
     if not isinstance(sig_data["coresig"], dict):
@@ -92,7 +94,7 @@ def verify(core_obj, trust_file_name, sig_file_name):
     if shutil.which("ssh-keygen") is None:
         raise RuntimeError("ssh-keygen not found in $PATH")
 
-    user_results = {}
+    user_results: dict[str, bool] = {}
     for sig in sig_data["coresig"]["signatures"]:
         f_os, tmp_name = tempfile.mkstemp(prefix="sig_", suffix=".asc")
         os.write(f_os, bytes(sig["signature"].encode("utf-8")))
@@ -123,29 +125,30 @@ def verify(core_obj, trust_file_name, sig_file_name):
     return user_results
 
 
-def main():
-    logging.basicConfig(filename="pysig.log", level=logging.INFO)
-    logger.info("Command line arguments: " + str(sys.argv))
-    if (len(sys.argv) >= 4) and (sys.argv[1] == "sign"):
-        dataf = sys.argv[2]
-        keyf = sys.argv[3]
-        if len(sys.argv) == 5:
-            old_sig_file = sys.argv[4]
-        else:
-            old_sig_file = None
-        sig = sign(dataf, keyf, old_sig_file)
-        print(sig)
-
-    if (len(sys.argv) >= 4) and (sys.argv[1] == "verify"):
-        dataf = sys.argv[2]
-        trustf = sys.argv[3]
-        if len(sys.argv) == 5:
-            sigf = sys.argv[4]
-        else:
-            sigf = None
-        res = verify(dataf, trustf, sigf)
-        print(res)
-
-
-if __name__ == "__main__":
-    main()
+# def main() -> None:
+#     logging.basicConfig(filename="pysig.log", level=logging.INFO)
+#     logger.info("Command line arguments: " + str(sys.argv))
+#     if (len(sys.argv) >= 4) and (sys.argv[1] == "sign"):
+#         dataf = sys.argv[2]
+#         keyf = sys.argv[3]
+#         if len(sys.argv) == 5:
+#             old_sig_file = sys.argv[4]
+#         else:
+#             old_sig_file = None
+#         sig = sidataf, keyf, old_sig_file)
+#         print(sig)
+#
+#     if (len(sys.argv) >= 4) and (sys.argv[1] == "verify"):
+#         dataf = sys.argv[2]
+#         trustf = sys.argv[3]
+#         if len(sys.argv) == 5:
+#             sigf = sys.argv[4]
+#         else:
+#             sigf = None
+#         res = verify(dataf, trustf, sigf)
+#         print(res)
+#
+#
+# if __name__ == "__main__":
+#     main()
+#
