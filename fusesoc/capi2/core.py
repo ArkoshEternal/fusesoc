@@ -196,7 +196,7 @@ class Core:
         if not target:
             raise RuntimeError(f"'{self.name}' has no target '{target_name}'")
         
-        return target["variables"].copy()
+        return target.get("variables", [])
 
     def get_filters(self, flags, variables):
         target_name, target = self._get_target(flags, variables)
