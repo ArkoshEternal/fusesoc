@@ -7,11 +7,13 @@ import os
 from importlib import import_module
 from pathlib import Path
 
+from fusesoc.capi2.core import Core
 from fusesoc.coremanager import CoreManager, DependencyError
 from fusesoc.edalizer import Edalizer
 from fusesoc.librarymanager import Library, LibraryManager
 from fusesoc.utils import setup_logging, yaml_fread
 from fusesoc.vlnv import Vlnv
+from fusesoc import Config
 
 try:
     from edalize.edatool import get_edatool
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class Fusesoc:
-    def __init__(self, config):
+    def __init__(self, config: Config) -> None:
         self.config = config
 
         self.lm = LibraryManager(config.library_root)
@@ -30,7 +32,7 @@ class Fusesoc:
 
         self._register_libraries()
 
-    def _register_libraries(self):
+    def _register_libraries(self) -> None:
         cores_root_libs = [Library(acr, acr) for acr in self.config.cores_root]
         # Add libraries from config file, env var and command-line
         for library in self.config.libraries + cores_root_libs:
@@ -49,7 +51,7 @@ class Fusesoc:
                     logger.warning(_s.format(str(e)))
 
     @staticmethod
-    def init_logging(verbose, monochrome, log_file=None):
+    def init_logging(verbose: bool, monochrome: bool, log_file: str = None) -> None:
         """
         Call before instantiation of fusesoc.Fusesoc or fusesoc.Config classes if logging is required.
         """
@@ -67,31 +69,31 @@ class Fusesoc:
         else:
             logger.debug("Colorful output")
 
-    def add_library(self, library):
+    def add_library(self, library: Library) -> None:
         self.cm.add_library(library, self.config.ignored_dirs)
 
-    def get_library(self, library_name):
+    def get_library(self, library_name: str) -> Library | None:
         return self.lm.get_library(library_name)
 
-    def update_libraries(self, library_names):
+    def update_libraries(self, library_names: list[str]) -> None:
         self.lm.update(library_names)
 
-    def get_libraries(self):
+    def get_libraries(self) -> list[Library]:
         return self.lm.get_libraries()
 
-    def get_core(self, name):
+    def get_core(self, name: str) -> Core:
         return self.cm.get_core(Vlnv(name))
 
-    def get_cores(self):
+    def get_cores(self) -> list[Core]:
         return self.cm.get_cores()
 
-    def find_cores(self, library):
+    def find_cores(self, library: str) -> list[Core]:
         return self.cm.find_cores(library, self.config.ignored_dirs)
 
-    def get_generators(self):
+    def get_generators(self) -> list[str]:
         return self.cm.get_generators()
 
-    def get_work_root(self, core, flags):
+    def get_work_root(self, core: Core, flags: dict) -> str:
         flow = core.get_flow(flags)
 
         target = flags["target"]
@@ -115,7 +117,7 @@ class Fusesoc:
 
         return work_root
 
-    def get_backend(self, core, flags, backendargs=[]):
+    def get_backend(self, core: Core, flags: dict, backendargs: list = []) -> tuple[str, type]:
 
         work_root = self.get_work_root(core, flags)
 

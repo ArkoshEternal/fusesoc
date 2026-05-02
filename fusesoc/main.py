@@ -10,29 +10,25 @@ import pathlib
 import shutil
 import signal
 import sys
+from typing import Sequence
 import warnings
 from pathlib import Path
 
 import argcomplete
 
-from fusesoc import signature
+from fusesoc import Config, Core, CoreManager, Fusesoc, DependencyError, Edalizer, LibraryManager, LockFile
 
 try:
     from fusesoc.version import version as __version__
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     __version__ = "unknown"
 
 import logging
 
-from fusesoc.config import Config
-from fusesoc.coremanager import DependencyError
-from fusesoc.fusesoc import Fusesoc
-from fusesoc.librarymanager import Library
-
 logger = logging.getLogger(__name__)
 
 
-def _get_core(cm, core_name):
+def _get_core(cm: CoreManager, core_name: str) -> Core:
     matches = set()
     if ":" not in core_name:
         for core in cm.get_cores():
@@ -47,7 +43,6 @@ def _get_core(cm, core_name):
             logger.error(_s)
             exit(1)
 
-    core = None
     try:
         core = cm.get_core(core_name)
     except RuntimeError as e:
@@ -65,7 +60,7 @@ def _get_core(cm, core_name):
     return core
 
 
-def abort_handler(signal, frame):
+def abort_handler(signal, frame) -> None:
     print("")
     logger.info("****************************")
     logger.info("****   FuseSoC aborted  ****")
@@ -77,15 +72,15 @@ def abort_handler(signal, frame):
 signal.signal(signal.SIGINT, abort_handler)
 
 
-def pgm(fs, args):
+def pgm(fs: Fusesoc, args: argparse.Namespace) -> None:
     warnings.warn(
         "The 'pgm' subcommand has been removed. "
         "Use 'fusesoc run --target=synth --run' instead."
     )
 
 
-def fetch(fs, args):
-    core = _get_core(fs, args.core)
+def fetch(fs: CoreManager, args: argparse.Namespace) -> None:
+    core = _get_core(cm=fs, core_name=args.core)
 
     try:
         core.setup()
@@ -94,12 +89,12 @@ def fetch(fs, args):
         exit(1)
 
 
-def list_paths(fs, args):
+def list_paths(fs: Fusesoc, args: argparse.Namespace) -> None:
     cores_root = [x.location for x in fs.get_libraries()]
     print("\n".join(cores_root))
 
 
-def add_library(fs, args):
+def add_library(fs: Fusesoc, args: argparse.Namespace) -> None:
     sync_uri = vars(args)["sync-uri"]
 
     name = args.name or os.path.basename(sync_uri.rstrip("/"))
@@ -149,7 +144,7 @@ def add_library(fs, args):
         exit(1)
 
 
-def library_list(fs, args):
+def library_list(fs: Fusesoc, args: argparse.Namespace) -> None:
     lengths = [4, 8, 9, 8, 12, 9]
     for lib in fs.get_libraries():
         lengths[0] = max(lengths[0], len(lib.name))
@@ -180,7 +175,7 @@ def library_list(fs, args):
         )
 
 
-def list_cores(fs, args):
+def list_cores(fs: Fusesoc, args: argparse.Namespace) -> None:
     cores = fs.get_cores()
     trustfile = fs.config.ssh_trustfile or args.ssh_trustfile
     if not trustfile:
@@ -215,7 +210,7 @@ def list_cores(fs, args):
         )
 
 
-def list_tools(fs, args):
+def list_tools(fs: Fusesoc, args: argparse.Namespace) -> None:
     from edalize.edatool import get_edatool, walk_tool_packages
 
     _tp = list(walk_tool_packages())
@@ -231,7 +226,7 @@ def list_tools(fs, args):
             pass
 
 
-def gen_list(fs, args):
+def gen_list(fs: Fusesoc, args: argparse.Namespace) -> None:
     cores = fs.get_generators()
     if not cores:
         print("\nNo available generators\n")
@@ -251,7 +246,7 @@ def gen_list(fs, args):
                 )
 
 
-def gen_show(fs, args):
+def gen_show(fs: Fusesoc, args: argparse.Namespace) -> None:
     cores = fs.get_generators()
     for core in sorted(cores.keys()):
         for generator_name, generator_data in cores[core].items():
@@ -272,13 +267,13 @@ Usage       :
                 )
 
 
-def core_info(fs, args):
+def core_info(fs: Fusesoc, args: argparse.Namespace) -> None:
     core = _get_core(fs, args.core)
     trustfile = fs.config.ssh_trustfile or args.ssh_trustfile
     print(core.info(trustfile))
 
 
-def core_sign(fs, args):
+def core_sign(fs: Fusesoc, args: argparse.Namespace) -> None:
     core = _get_core(fs, args.core)
     logger.info("sign core file: " + core.core_file)
     logger.info("with key file: " + args.keyfile)
@@ -291,13 +286,13 @@ def core_sign(fs, args):
     print(f"{sigfile} created")
 
 
-def gen_clean(fs, args):
+def gen_clean(fs: Fusesoc, args: argparse.Namespace) -> None:
     cachedir = os.path.join(fs.config.cache_root, "generator_cache")
     shutil.rmtree(cachedir, ignore_errors=True)
     print(f"Cleaned generator cache: {cachedir}")
 
 
-def run(fs, args):
+def run(fs: Fusesoc, args: argparse.Namespace) -> None:
     stages = (args.setup, args.build, args.run)
 
     # Always run setup if build is true
@@ -400,7 +395,7 @@ def run(fs, args):
             exit(1)
 
 
-def config(fs, args):
+def config(fs: Fusesoc, args: argparse.Namespace) -> None:
     conf = Config(path=args.config if args.config else None)
 
     if not hasattr(conf, args.key):
@@ -430,7 +425,7 @@ def prepare_work_root(work_root):
         os.makedirs(work_root)
 
 
-def update(fs, args):
+def update(fs: Fusesoc, args: argparse.Namespace) -> None:
     fs.update_libraries(args.libraries)
 
 
@@ -469,7 +464,7 @@ class GenCompleter:
         return cores
 
 
-def get_parser():
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
 
@@ -574,9 +569,10 @@ def get_parser():
     parser_gen_show = gen_subparsers.add_parser(
         "show", help="Show information about a generator"
     )
-    parser_gen_show.add_argument(
+    gen = parser_gen_show.add_argument(
         "generator", help="Name of the generator to show"
-    ).completer = GenCompleter()
+    )
+    gen.completer = GenCompleter()
     parser_gen_show.set_defaults(func=gen_show)
 
     # gen clean subparser
@@ -737,7 +733,7 @@ def get_parser():
     return parser
 
 
-def parse_args(argv):
+def parse_args(argv: Sequence[str]) -> None | argparse.Namespace:
     parser = get_parser()
 
     argcomplete.autocomplete(parser, always_complete_options=False)
@@ -747,12 +743,13 @@ def parse_args(argv):
         return args
     if hasattr(args, "subparser"):
         args.subparser.print_help()
+        return None
     else:
         parser.print_help()
         return None
 
 
-def args_to_config(args, config):
+def args_to_config(args: argparse.Namespace, config: Config) -> None:
     if hasattr(args, "resolve_env_vars_early") and args.resolve_env_vars_early:
         setattr(config, "args_resolve_env_vars_early", args.resolve_env_vars_early)
 
@@ -783,10 +780,9 @@ def args_to_config(args, config):
         setattr(config, "args_system_name", args.system_name)
 
     if hasattr(args, "filter"):
-        config.args_filters = args.filter
+        setattr(config, "args_filters", args.filter)
 
-
-def fusesoc(args):
+def fusesoc(args: argparse.Namespace) -> None:
     Fusesoc.init_logging(args.verbose, args.monochrome, args.log_file)
 
     config = Config(args.config)
@@ -797,9 +793,9 @@ def fusesoc(args):
     args.func(fs, args)
 
 
-def main():
+def main() -> None:
     args = parse_args(sys.argv[1:])
-    if not args:
+    if args is None:
         exit(0)
 
     logger.debug("Command line arguments: " + str(sys.argv))

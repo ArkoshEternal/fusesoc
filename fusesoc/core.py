@@ -10,5 +10,5 @@ logger = logging.getLogger(__name__)
 
 
 class Core:
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs) -> Capi2Core:
         return Capi2Core(*args, **kwargs)
