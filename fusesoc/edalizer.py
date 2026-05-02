@@ -14,13 +14,11 @@ from importlib import import_module
 from fusesoc import utils
 from fusesoc.capi2.coreparser import Core2Parser
 from fusesoc.core import Core
-from fusesoc.edam import Edam, GeneratorInput
 from fusesoc.utils import Launcher, merge_dict
 from fusesoc.vlnv import Vlnv
+from fusesoc.yaml_schemas import Edam, GeneratorInput
 
 logger = logging.getLogger(__name__)
-
-type
 
 
 class FileAction(argparse.Action):
