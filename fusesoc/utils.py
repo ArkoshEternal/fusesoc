@@ -10,6 +10,8 @@ import warnings
 
 import yaml
 
+from fusesoc.yaml_schemas import Edam, GeneratorInput, Lockfile
+
 try:
     from yaml import CSafeDumper as YamlDumper
     from yaml import CSafeLoader as YamlLoader
@@ -21,9 +23,12 @@ from fusesoc.capi2.inheritance import Inheritance
 
 logger = logging.getLogger(__name__)
 
+YamlWriteContent = Edam | GeneratorInput | Lockfile
+YamlContent = YamlWriteContent
+
 
 class Launcher:
-    def __init__(self, cmd, args=[], cwd=None):
+    def __init__(self, cmd: str, args: list = [], cwd: str = None) -> None:
         self.cmd = cmd
         self.args = args
         self.cwd = cwd
@@ -84,11 +89,11 @@ COLOR_MAP = {
 
 
 class ColoredFormatter(logging.Formatter):
-    def __init__(self, msg, monochrome):
+    def __init__(self, msg: str, monochrome: bool) -> None:
         super().__init__(msg)
         self.monochrome = monochrome
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         uncolored = super().format(record)
         levelname = record.levelname
         if not self.monochrome and (levelname in COLOR_MAP):
@@ -99,7 +104,7 @@ class ColoredFormatter(logging.Formatter):
         return formatted
 
 
-def setup_logging(level, monchrome=False, log_file=None):
+def setup_logging(level: int, monochrome: bool = False, log_file: str = None) -> None:
     """
     Utility function for setting up logging.
     """
@@ -111,7 +116,9 @@ def setup_logging(level, monchrome=False, log_file=None):
     # logging infrastructure. Warnings end up in the py.warnings category.
     logging.captureWarnings(True)
 
-    def _formatwarning(message, category, filename, lineno, line=None):
+    def _formatwarning(
+        message: str, category: type, filename: str, lineno: int, line: str = None
+    ) -> str:
         # Format FutureWarnings, which are intended for end users, in a way
         # that strips out all code references, which are meaningless to an end
         # user.
@@ -126,7 +133,7 @@ def setup_logging(level, monchrome=False, log_file=None):
     # Pretty color terminal logging
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = ColoredFormatter("%(levelname)s: %(message)s", monchrome)
+    formatter = ColoredFormatter("%(levelname)s: %(message)s", monochrome)
     ch.setFormatter(formatter)
     # Which packages do we want to log from.
     packages = (
@@ -148,21 +155,23 @@ def setup_logging(level, monchrome=False, log_file=None):
     logger.debug(f"Setup logging at level {level}.")
 
 
-def yaml_fwrite(filepath, content, preamble=""):
+def yaml_fwrite(filepath: str, content: YamlWriteContent, preamble: str = "") -> None:
     with open(filepath, "w") as f:
         if len(preamble) > 0:
             f.write(preamble + "\n")
         f.write(yaml.dump(content, Dumper=YamlDumper, sort_keys=False))
 
 
-def yaml_fread(filepath, resolve_env_vars=False, remove_preamble=False):
+def yaml_fread(
+    filepath: str, resolve_env_vars: bool = False, remove_preamble: bool = False
+):
     with open(filepath) as f:
         if remove_preamble:
             f.readline()
         return yaml_read(f.read(), resolve_env_vars)
 
 
-def yaml_read(data, resolve_env_vars=False):
+def yaml_read(data: str, resolve_env_vars: bool = False) -> YamlContent:
     try:
         data = Inheritance.yaml_merge_2_fusesoc_merge(data)
         capi_data = {}
@@ -175,11 +184,11 @@ def yaml_read(data, resolve_env_vars=False):
         raise SyntaxError(str(e))
 
 
-def yaml_dump(data):
+def yaml_dump(data: YamlContent) -> str:
     return yaml.dump(data)
 
 
-def merge_dict(d1, d2, concat_list_appends_only=False):
+def merge_dict(d1: dict, d2: dict, concat_list_appends_only: bool = False) -> dict:
     for key, value in d2.items():
         if isinstance(value, dict):
             d1[key] = merge_dict(d1.get(key, {}), value)

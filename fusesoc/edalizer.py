@@ -14,10 +14,13 @@ from importlib import import_module
 from fusesoc import utils
 from fusesoc.capi2.coreparser import Core2Parser
 from fusesoc.core import Core
+from fusesoc.edam import Edam, GeneratorInput
 from fusesoc.utils import Launcher, merge_dict
 from fusesoc.vlnv import Vlnv
 
 logger = logging.getLogger(__name__)
+
+type
 
 
 class FileAction(argparse.Action):
@@ -40,6 +43,8 @@ def str2bool(v):
 
 
 class Edalizer:
+    edam: Edam
+
     def __init__(
         self,
         toplevel,
@@ -101,7 +106,7 @@ class Edalizer:
             except SystemExit as e:
                 raise RuntimeError(f"Filter exited with error code {str(e)}")
 
-    def run(self):
+    def run(self) -> Edam:
         """Run all steps to create a EDAM file"""
 
         # Run the setup task on all cores (fetch and patch them as needed)
@@ -321,7 +326,7 @@ class Edalizer:
         for snippet in first_snippets + snippets + last_snippets:
             merge_dict(self.edam, snippet)
 
-    def _build_parser(self, backend_class, edam):
+    def _build_parser(self, backend_class, edam: Edam) -> argparse.ArgumentParser:
         typedict = {
             "bool": {"type": str2bool, "nargs": "?", "const": True},
             "file": {"type": str, "nargs": 1, "action": FileAction},
@@ -448,7 +453,9 @@ class Edalizer:
             else:
                 raise RuntimeError("Unknown parameter " + key)
 
-    def _parse_flow_options(self, backend_class, backendargs, edam):
+    def _parse_flow_options(
+        self, backend_class, backendargs, edam: Edam
+    ) -> dict[str, object]:
         available_flow_options = backend_class.get_flow_options()
 
         # First we check which flow options that are set in the EDAM.
@@ -522,7 +529,7 @@ class Edalizer:
 
         self.add_parsed_args(backend_class, args_dict)
 
-    def to_yaml(self, edam_file):
+    def to_yaml(self, edam_file: str) -> None:
         pathlib.Path(edam_file).parent.mkdir(parents=True, exist_ok=True)
         return utils.yaml_fwrite(edam_file, self.edam)
 
@@ -555,7 +562,7 @@ class Ttptttg:
         )
         self.vlnv = Vlnv(vlnv_str)
 
-        self.generator_input = {
+        self.generator_input: GeneratorInput = {
             "files_root": os.path.abspath(core.files_root),
             "gapi": "1.0",
             "parameters": parameters,

@@ -10,6 +10,22 @@
 from typing import Literal, TypedDict
 
 
+# Lockfile Schema
+class Lockfile(TypedDict):
+    lockfile_version: int
+    fusesoc_version: str
+    cores: list[dict[str, str]]
+
+
+# Generator Input Schema
+class GeneratorInput(TypedDict):
+    files_root: str
+    gapi: Literal["1.0"]
+    parameters: dict[str, dict]
+    vlnv: str
+
+
+# EDAM Schema
 class CustomLicense(TypedDict):
     name: str
     text: str
