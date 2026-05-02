@@ -10,6 +10,22 @@
 from typing import Literal, TypedDict
 
 
+# Core Signature Schema
+class SignatureEntry(TypedDict):
+    type: str  # SSH key type, e.g. "ssh-ed25519"
+    user_id: str  # signatory identity from the public key file
+    signature: str  # the signature string produced by ssh-keygen -Y sign
+
+
+class CoreSig(TypedDict):
+    name: str  # core VLNV string
+    signatures: list[SignatureEntry]
+
+
+class Signature(TypedDict):
+    coresig: CoreSig
+
+
 # Lockfile Schema
 class Lockfile(TypedDict):
     lockfile_version: int
