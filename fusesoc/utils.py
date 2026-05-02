@@ -10,7 +10,7 @@ import warnings
 
 import yaml
 
-from fusesoc.yaml_schemas import Edam, GeneratorInput, Lockfile
+from fusesoc.yaml_schemas import Edam, GeneratorInput, Lockfile, Signature
 
 try:
     from yaml import CSafeDumper as YamlDumper
@@ -24,22 +24,24 @@ from fusesoc.capi2.inheritance import Inheritance
 logger = logging.getLogger(__name__)
 
 YamlWriteContent = Edam | GeneratorInput | Lockfile
-YamlContent = YamlWriteContent
+YamlReadContent = Edam | Lockfile | Signature
+YamlContent = YamlWriteContent | YamlReadContent
 
 
 class Launcher:
-    def __init__(self, cmd: str, args: list = [], cwd: str = None) -> None:
+    def __init__(self, cmd: str, args: list = [], cwd: str | None = None) -> None:
         self.cmd = cmd
         self.args = args
         self.cwd = cwd
 
-    def run(self):
+    def run(self) -> None:
         """Runs the cmd with args after converting them all to strings via str"""
         logger.debug(self.cwd or "./")
         logger.debug("    " + str(self))
         try:
+            cmdline = [str(arg) for arg in [self.cmd] + self.args]
             subprocess.check_call(
-                map(str, [self.cmd] + self.args),
+                cmdline,
                 cwd=self.cwd,
             ),
         except FileNotFoundError:
@@ -50,22 +52,22 @@ class Launcher:
             self.errormsg = '"{}" exited with an error code. See stderr for details.'
             raise RuntimeError(self.errormsg.format(str(self)))
 
-    def __str__(self):
+    def __str__(self) -> str:
         return " ".join(map(str, [self.cmd] + self.args))
 
 
-def is_mingw():
+def is_mingw() -> bool:
     if sys.platform == "msys":
         return True
     return sys.platform == "win32" and "GCC" in sys.version
 
 
-def cygpath(win_path):
+def cygpath(win_path: str) -> str:
     path = subprocess.check_output(["cygpath", "-u", win_path])
     return path.decode("ascii").strip()
 
 
-def unique_dirs(file_list):
+def unique_dirs(file_list: list[str]) -> list[str]:
     return list({os.path.dirname(f) for f in file_list})
 
 
@@ -117,13 +119,17 @@ def setup_logging(level: int, monochrome: bool = False, log_file: str = None) ->
     logging.captureWarnings(True)
 
     def _formatwarning(
-        message: str, category: type, filename: str, lineno: int, line: str = None
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        line: str | None = None,
     ) -> str:
         # Format FutureWarnings, which are intended for end users, in a way
         # that strips out all code references, which are meaningless to an end
         # user.
         if category is FutureWarning:
-            return message
+            return str(message)
 
         return _formatwarning_orig(message, category, filename, lineno, line)
 
@@ -147,7 +153,8 @@ def setup_logging(level: int, monochrome: bool = False, log_file: str = None) ->
         package_logger.addHandler(ch)
         package_logger.setLevel(level)
     # Warning only packages
-    warning_only_packages = []
+    # FIXME: Doesn't do anything
+    warning_only_packages: list[str] = []
     for package in warning_only_packages:
         package_logger = logging.getLogger(package)
         package_logger.addHandler(ch)
