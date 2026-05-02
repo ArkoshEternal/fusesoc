@@ -2,13 +2,10 @@
 # Licensed under the 2-Clause BSD License, see LICENSE for details.
 # SPDX-License-Identifier: BSD-2-Clause
 
-import logging
-
 from fusesoc.capi2.core import Core as Capi2Core
 
-logger = logging.getLogger(__name__)
+# Re-export Capi2Core under the public name Core.
+# A plain alias allows static type checkers to resolve the full API.
+Core = Capi2Core
 
-
-class Core:
-    def __new__(cls, *args, **kwargs):
-        return Capi2Core(*args, **kwargs)
+__all__ = ["Core"]

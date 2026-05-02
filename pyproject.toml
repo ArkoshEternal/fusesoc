@@ -32,7 +32,7 @@ dependencies = [
   "fastjsonschema",
   "argcomplete",
 ]
-requires-python = ">=3.6, <4"
+requires-python = ">=3.10, <4"
 
 [project.urls]
 Homepage = "https://fusesoc.net"
@@ -45,7 +45,7 @@ Changelog = "https://github.com/olofk/fusesoc/blob/main/NEWS"
 write_to = "fusesoc/version.py"
 
 [tool.setuptools.packages.find]
-include = ["fusesoc", "fusesoc.capi2", "fusesoc.provider", "fusesoc.parser", "fusesoc.filters"]
+where = ["."]
 
 [project.scripts]
 fusesoc = "fusesoc.main:main"
@@ -64,4 +64,4 @@ commands = pytest
 line-length = 88
 indent-width = 4
 
-target-version = "py37"
+target-version = "py310"
