@@ -31,6 +31,7 @@ dependencies = [
   "simplesat>=0.9.1",
   "fastjsonschema",
   "argcomplete",
+  "pydantic"
 ]
 requires-python = ">=3.10, <4"
 
@@ -64,4 +65,4 @@ commands = pytest
 line-length = 88
 indent-width = 4
 
-target-version = "py10"
+target-version = "py310"
