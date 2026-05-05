@@ -46,7 +46,7 @@ Changelog = "https://github.com/olofk/fusesoc/blob/main/NEWS"
 write_to = "fusesoc/version.py"
 
 [tool.setuptools.packages.find]
-include = ["fusesoc", "fusesoc.capi2", "fusesoc.provider", "fusesoc.parser", "fusesoc.filters"]
+include = ["fusesoc*"]
 
 [project.scripts]
 fusesoc = "fusesoc.main:main"
