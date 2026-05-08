@@ -67,7 +67,9 @@ class Config:
         for section in library_sections:
             name = section.partition(".")[2]
             try:
-                location = self._cp.get(section, "location")
+                location = self._resolve_path_from_cfg(
+                    self._cp.get(section, "location")
+                )
             except configparser.NoOptionError:
                 location = os.path.join(self.library_root, name)
 
