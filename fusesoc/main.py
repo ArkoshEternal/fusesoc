@@ -300,25 +300,20 @@ def gen_clean(fs, args):
 def run(fs, args):
     stages = (args.setup, args.build, args.run)
 
-    # Always run setup if build is true
-    args.setup |= args.build
-
-    # Run all stages by default if no stage flags are set
+    # Run all stages by default if no stage flags are set. Always run setup if
+    # build is requested. These defaults are CLI policy; fs.run() takes the
+    # resolved booleans directly.
     if stages == (False, False, False):
-        do_configure = True
-        do_build = True
-        do_run = True
+        do_configure = do_build = do_run = True
     elif stages == (True, False, True):
         logger.error("Configure and run without build is invalid")
         exit(1)
     else:
-        do_configure = args.setup
+        do_configure = args.setup or args.build
         do_build = args.build
         do_run = args.run
 
-    flags = {"target": args.target or "default"}
-    if args.tool:
-        flags["tool"] = args.tool
+    flags = {}
     for flag in args.flag:
         if flag[0] == "+":
             flags[flag[1:]] = True
@@ -328,76 +323,22 @@ def run(fs, args):
             flags[flag] = True
 
     try:
-        fs.cm.db.mapping_set(args.mapping)
-    except RuntimeError as e:
-        logger.error(e)
-        exit(1)
-
-    if args.lockfile is not None:
-        try:
-            fs.cm.db.load_lockfile(args.lockfile)
-        except SyntaxError as e:
-            logger.error(f"Failed to load lock file, {str(e)}")
-            exit(1)
-
-    core = _get_core(fs, args.system)
-
-    try:
-        flags = dict(core.get_flags(flags["target"]), **flags)
-    except SyntaxError as e:
-        logger.error(str(e))
-        exit(1)
+        fs.run(
+            args.system,
+            target=args.target or "default",
+            tool=args.tool,
+            flags=flags,
+            mapping=args.mapping,
+            lockfile=args.lockfile,
+            backendargs=args.backendargs,
+            do_configure=do_configure,
+            do_build=do_build,
+            do_run=do_run,
+            clean=args.clean,
+        )
     except RuntimeError as e:
         logger.error(str(e))
         exit(1)
-
-    # Unconditionally clean out the work root on fresh builds
-    # if we use the old tool API or clean flag is set
-    if do_configure and (not core.get_flow(flags) or args.clean):
-        try:
-            prepare_work_root(fs.get_work_root(core, flags))
-        except RuntimeError as e:
-            logger.error(e)
-            exit(1)
-
-    # Frontend/backend separation
-
-    try:
-        edam_file, backend = fs.get_backend(core, flags, args.backendargs)
-
-    except RuntimeError as e:
-        logger.error(str(e))
-        exit(1)
-    except FileNotFoundError as e:
-        logger.error(f'Could not find EDA API file "{e.filename}"')
-        exit(1)
-
-    makefile = os.path.join(backend.work_root, "Makefile")
-    do_configure = not os.path.exists(makefile) or (
-        os.path.getmtime(makefile) < os.path.getmtime(edam_file)
-    )
-
-    if do_configure:
-        try:
-            backend.configure()
-        except RuntimeError as e:
-            logger.error("Failed to configure the system")
-            logger.error(str(e))
-            exit(1)
-
-    if do_build:
-        try:
-            backend.build()
-        except RuntimeError as e:
-            logger.error("Failed to build {} : {}".format(str(core.name), str(e)))
-            exit(1)
-
-    if do_run:
-        try:
-            backend.run()
-        except RuntimeError as e:
-            logger.error("Failed to run {} : {}".format(str(core.name), str(e)))
-            exit(1)
 
 
 def config(fs, args):
@@ -416,18 +357,6 @@ def config(fs, args):
         if hasattr(conf, args.key):
             setattr(conf, args.key, args.value)
             conf.write()
-
-
-# Clean out old work root
-def prepare_work_root(work_root):
-    if os.path.exists(work_root):
-        for f in os.listdir(work_root):
-            if os.path.isdir(os.path.join(work_root, f)):
-                shutil.rmtree(os.path.join(work_root, f))
-            else:
-                os.remove(os.path.join(work_root, f))
-    else:
-        os.makedirs(work_root)
 
 
 def update(fs, args):
