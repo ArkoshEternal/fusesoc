@@ -424,19 +424,13 @@ class GenCompleter:
         return cores
 
 
-def get_parser():
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers()
-
-    # Global actions
+def _add_global_options(parser):
     parser.add_argument(
         "--version",
         help="Display the FuseSoC version",
         action="version",
         version=__version__,
     )
-
-    # Global options
     parser.add_argument(
         "--cores-root",
         help="Add additional directories containing cores",
@@ -457,25 +451,25 @@ def get_parser():
     parser.add_argument("--log-file", help="Write log messages to file")
     parser.add_argument("--ssh-trustfile", help="Override trustfile in fusesoc.conf")
 
-    # fetch subparser
+
+def _add_fetch_parser(subparsers):
     parser_fetch = subparsers.add_parser(
         "fetch", help="Fetch a remote core and its dependencies to local cache"
     )
     parser_fetch.add_argument("core")
     parser_fetch.set_defaults(func=fetch)
 
-    # core subparser
+
+def _add_core_parser(subparsers):
     parser_core = subparsers.add_parser(
         "core", help="Subcommands for dealing with cores"
     )
-    core_subparsers = parser_core.add_subparsers()
     parser_core.set_defaults(subparser=parser_core)
+    core_subparsers = parser_core.add_subparsers()
 
-    # core list subparser
     parser_core_list = core_subparsers.add_parser("list", help="List available cores")
     parser_core_list.set_defaults(func=list_cores)
 
-    # core show subparser
     parser_core_show = core_subparsers.add_parser(
         "show", help="Show information about a core"
     )
@@ -493,42 +487,42 @@ def get_parser():
     parser_core_sign.add_argument("keyfile", help="File containing ssh private key")
     parser_core_sign.set_defaults(func=core_sign)
 
-    # tool subparser
+
+def _add_tool_parser(subparsers):
     parser_tool = subparsers.add_parser(
         "tool", help="Subcommands for dealing with tools"
     )
-    tool_subparsers = parser_tool.add_subparsers()
     parser_tool.set_defaults(subparser=parser_tool)
+    tool_subparsers = parser_tool.add_subparsers()
 
-    # tool list subparser
     parser_tool_list = tool_subparsers.add_parser("list", help="List available tools")
     parser_tool_list.set_defaults(func=list_tools)
 
-    # list-cores subparser
+
+def _add_legacy_parsers(subparsers):
+    # Flat aliases kept for backwards compatibility with the `core` subcommands.
     parser_list_cores = subparsers.add_parser("list-cores", help="List available cores")
     parser_list_cores.set_defaults(func=list_cores)
 
-    # core-info subparser
     parser_core_info = subparsers.add_parser(
         "core-info", help="Display details about a core"
     )
     parser_core_info.add_argument("core").completer = CoreCompleter()
     parser_core_info.set_defaults(func=core_info)
 
-    # gen subparser
+
+def _add_gen_parser(subparsers):
     parser_gen = subparsers.add_parser(
         "gen", help="Run or show information about generators"
     )
     parser_gen.set_defaults(subparser=parser_gen)
     gen_subparsers = parser_gen.add_subparsers()
 
-    # gen list subparser
     parser_gen_list = gen_subparsers.add_parser(
         "list", help="List available generators"
     )
     parser_gen_list.set_defaults(func=gen_list)
 
-    # gen show subparser
     parser_gen_show = gen_subparsers.add_parser(
         "show", help="Show information about a generator"
     )
@@ -537,26 +531,26 @@ def get_parser():
     ).completer = GenCompleter()
     parser_gen_show.set_defaults(func=gen_show)
 
-    # gen clean subparser
     parser_gen_clean = gen_subparsers.add_parser(
         "clean", help="Clean generator cache directory"
     )
     parser_gen_clean.set_defaults(func=gen_clean)
 
-    # list-paths subparser
+
+def _add_list_paths_parser(subparsers):
     parser_list_paths = subparsers.add_parser(
         "list-paths", help="Display the search order for core root paths"
     )
     parser_list_paths.set_defaults(func=list_paths)
 
-    # library subparser
+
+def _add_library_parser(subparsers):
     parser_library = subparsers.add_parser(
         "library", help="Subcommands for dealing with library management"
     )
-    library_subparsers = parser_library.add_subparsers()
     parser_library.set_defaults(subparser=parser_library)
+    library_subparsers = parser_library.add_subparsers()
 
-    # library add subparser
     parser_library_add = library_subparsers.add_parser(
         "add", help="Add new library to fusesoc.conf"
     )
@@ -595,13 +589,11 @@ def get_parser():
     )
     parser_library_add.set_defaults(func=add_library)
 
-    # library list subparser
     parser_library_list = library_subparsers.add_parser(
         "list", help="List core libraries"
     )
     parser_library_list.set_defaults(func=library_list)
 
-    # library update subparser
     parser_library_update = library_subparsers.add_parser(
         "update", help="Update the FuseSoC core libraries"
     )
@@ -610,7 +602,8 @@ def get_parser():
     )
     parser_library_update.set_defaults(func=update)
 
-    # run subparser
+
+def _add_run_parser(subparsers):
     parser_run = subparsers.add_parser("run", help="Start a tool flow")
     parser_run.add_argument(
         "--clean",
@@ -681,7 +674,8 @@ def get_parser():
     )
     parser_run.set_defaults(func=run)
 
-    # config subparser
+
+def _add_config_parser(subparsers):
     parser_config = subparsers.add_parser(
         "config",
         help="Read/write config default section [" + Config.default_section + "]",
@@ -691,6 +685,29 @@ def get_parser():
     parser_config.add_argument(
         "value", nargs=argparse.OPTIONAL, help="Config parameter"
     )
+
+
+# Each builder attaches one top-level subcommand (and its children) to the parser.
+_SUBCOMMAND_BUILDERS = (
+    _add_fetch_parser,
+    _add_core_parser,
+    _add_tool_parser,
+    _add_legacy_parsers,
+    _add_gen_parser,
+    _add_list_paths_parser,
+    _add_library_parser,
+    _add_run_parser,
+    _add_config_parser,
+)
+
+
+def get_parser():
+    parser = argparse.ArgumentParser()
+    _add_global_options(parser)
+
+    subparsers = parser.add_subparsers()
+    for build in _SUBCOMMAND_BUILDERS:
+        build(subparsers)
 
     return parser
 
@@ -703,66 +720,60 @@ def parse_args(argv):
 
     if hasattr(args, "func"):
         return args
+
+    # No subcommand was selected: show the relevant help and signal "no action".
     if hasattr(args, "subparser"):
         args.subparser.print_help()
     else:
         parser.print_help()
-        return None
+    return None
+
+
+# Maps an argparse attribute to the Config attribute it overrides. Each value is
+# copied onto the config only when present on the parsed args and truthy, so
+# subcommands that don't define a given option simply leave the config default
+# in place.
+_ARGS_TO_CONFIG = {
+    "resolve_env_vars_early": "args_resolve_env_vars_early",
+    "allow_additional_properties": "args_allow_additional_properties",
+    "verbose": "args_verbose",
+    "no_export": "args_no_export",
+    "build_root": "args_build_root",
+    "work_root": "args_work_root",
+    "cores_root": "args_cores_root",
+    "system_name": "args_system_name",
+}
 
 
 def args_to_config(args, config):
-    if hasattr(args, "resolve_env_vars_early") and args.resolve_env_vars_early:
-        setattr(config, "args_resolve_env_vars_early", args.resolve_env_vars_early)
+    for arg_name, config_name in _ARGS_TO_CONFIG.items():
+        value = getattr(args, arg_name, None)
+        if value:
+            setattr(config, config_name, value)
 
-    if (
-        hasattr(args, "allow_additional_properties")
-        and args.allow_additional_properties
-    ):
-        setattr(
-            config, "args_allow_additional_properties", args.allow_additional_properties
-        )
-
-    if args.verbose:
-        setattr(config, "args_verbose", args.verbose)
-
-    if hasattr(args, "no_export") and args.no_export:
-        setattr(config, "args_no_export", args.no_export)
-
-    if hasattr(args, "build_root") and args.build_root and len(args.build_root) > 0:
-        setattr(config, "args_build_root", args.build_root)
-
-    if hasattr(args, "work_root") and args.work_root and len(args.work_root) > 0:
-        setattr(config, "args_work_root", args.work_root)
-
-    if hasattr(args, "cores_root") and args.cores_root and len(args.cores_root) > 0:
-        setattr(config, "args_cores_root", args.cores_root)
-
-    if hasattr(args, "system_name") and args.system_name and len(args.system_name) > 0:
-        setattr(config, "args_system_name", args.system_name)
-
+    # Filters are applied even when empty so they can clear any prior value.
     if hasattr(args, "filter"):
         config.args_filters = args.filter
 
 
-def fusesoc(args):
+def run_command(args):
     Fusesoc.init_logging(args.verbose, args.monochrome, args.log_file)
 
     config = Config(_effective_config_path(args.config), create_if_missing=False)
     args_to_config(args, config)
     fs = Fusesoc(config)
 
-    # Run the function
     args.func(fs, args)
 
 
 def main():
     args = parse_args(sys.argv[1:])
     if not args:
-        exit(0)
+        sys.exit(0)
 
     logger.debug("Command line arguments: " + str(sys.argv))
 
-    fusesoc(args)
+    run_command(args)
 
 
 if __name__ == "__main__":
