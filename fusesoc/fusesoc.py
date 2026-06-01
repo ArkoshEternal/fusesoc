@@ -95,6 +95,13 @@ class Fusesoc:
     def get_core(self, name):
         return self.cm.get_core(Vlnv(name))
 
+    @property
+    def parse_errors(self):
+        """``(core_file, error_message)`` tuples for files that failed to parse
+        during library scanning. Forwarded from the underlying ``CoreManager``
+        so callers don't need to reach through the wrapper."""
+        return self.cm.parse_errors
+
     def get_cores(self):
         return self.cm.get_cores()
 
@@ -259,8 +266,8 @@ class Fusesoc:
             edalizer.run()
             edalizer.export()
             Path(work_root).mkdir(parents=True, exist_ok=True)
-            edalizer.apply_filters(self.config.filters)
             edalizer.parse_args(backend_class, backendargs)
+            edalizer.apply_filters(self.config.filters)
         except SyntaxError as e:
             raise RuntimeError(e.msg)
         except RuntimeError as e:

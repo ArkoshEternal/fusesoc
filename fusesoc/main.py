@@ -32,6 +32,13 @@ from fusesoc.librarymanager import Library
 logger = logging.getLogger(__name__)
 
 
+def _effective_config_path(args_config):
+    """Return the config path to use, with CLI taking precedence over env var."""
+    if args_config:
+        return args_config
+    return os.environ.get("FUSESOC_CONFIG")
+
+
 def _get_core(cm, core_name):
     matches = set()
     if ":" not in core_name:
@@ -54,10 +61,24 @@ def _get_core(cm, core_name):
         logger.error(str(e))
         exit(1)
     except DependencyError as e:
-        logger.error(
+        msg = (
             f"{core_name!r} or any of its dependencies requires {e.value!r}, but "
             "this core was not found"
         )
+        # If any core file failed to parse during library scanning, the missing
+        # core may simply be one that was silently ignored. Surface those errors
+        # alongside the "not found" message so they don't get lost in the log
+        # scrollback.
+        if getattr(cm, "parse_errors", None):
+            msg += (
+                "\n\n"
+                "The following core files failed to parse and were ignored "
+                "during the library scan; one of them may define the missing "
+                "core:"
+            )
+            for core_file, err in cm.parse_errors:
+                msg += f"\n  - {core_file}: {err}"
+        logger.error(msg)
         exit(1)
     except SyntaxError as e:
         logger.error(str(e))
@@ -133,8 +154,9 @@ def add_library(fs, args):
     auto_sync = not args.no_auto_sync
     library = Library(name, location, sync_type, sync_uri, sync_version, auto_sync)
 
-    if args.config:
-        config = Config(args.config)
+    effective_config = _effective_config_path(args.config)
+    if effective_config:
+        config = Config(effective_config)
     elif vars(args)["global"]:
         xdg_config_home = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
         config_file = os.path.join(xdg_config_home, "fusesoc", "fusesoc.conf")
@@ -342,7 +364,7 @@ def run(fs, args):
 
 
 def config(fs, args):
-    conf = Config(path=args.config if args.config else None)
+    conf = Config(path=_effective_config_path(args.config), create_if_missing=False)
 
     if not hasattr(conf, args.key):
         logger.error(f"Invalid config parameter: {args.key}")
@@ -365,7 +387,9 @@ def update(fs, args):
 
 class CoreCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(parsed_args.config)
+        config = Config(
+            _effective_config_path(parsed_args.config), create_if_missing=False
+        )
         args_to_config(parsed_args, config)
         fs = Fusesoc(config)
         cores = fs.get_cores()
@@ -391,7 +415,9 @@ class ToolCompleter:
 
 class GenCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(parsed_args.config)
+        config = Config(
+            _effective_config_path(parsed_args.config), create_if_missing=False
+        )
         args_to_config(parsed_args, config)
         fs = Fusesoc(config)
         cores = fs.get_generators()
@@ -417,7 +443,10 @@ def get_parser():
         default=[],
         action="append",
     )
-    parser.add_argument("--config", help="Specify the config file to use")
+    parser.add_argument(
+        "--config",
+        help="Specify the config file to use (overrides FUSESOC_CONFIG env var)",
+    )
     parser.add_argument(
         "--monochrome",
         help="Don't use color for messages",
@@ -718,7 +747,7 @@ def args_to_config(args, config):
 def fusesoc(args):
     Fusesoc.init_logging(args.verbose, args.monochrome, args.log_file)
 
-    config = Config(args.config)
+    config = Config(_effective_config_path(args.config), create_if_missing=False)
     args_to_config(args, config)
     fs = Fusesoc(config)
 
