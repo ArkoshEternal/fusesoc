@@ -4,6 +4,7 @@
 
 import logging
 import os
+import shutil
 from importlib import import_module
 from pathlib import Path
 
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 class Fusesoc:
+    # =====================================================================
+    # Construction / setup
+    # =====================================================================
+
     def __init__(self, config):
         self.config = config
 
@@ -67,6 +72,10 @@ class Fusesoc:
         else:
             logger.debug("Colorful output")
 
+    # =====================================================================
+    # Library Management
+    # =====================================================================
+
     def add_library(self, library):
         self.cm.add_library(library, self.config.ignored_dirs)
 
@@ -78,6 +87,10 @@ class Fusesoc:
 
     def get_libraries(self):
         return self.lm.get_libraries()
+
+    # =====================================================================
+    # Generator and Core Lookup
+    # =====================================================================
 
     def get_core(self, name):
         return self.cm.get_core(Vlnv(name))
@@ -97,6 +110,74 @@ class Fusesoc:
 
     def get_generators(self):
         return self.cm.get_generators()
+
+    def resolve_core(self, name):
+        """Resolve a user-supplied core name into a Core object.
+
+        A bare short name (no ':') is matched case-insensitively against the
+        name field of every known core. Exactly one match is used; several
+        matches raise RuntimeError. Unlike the old CLI helper this never calls
+        exit() -- callers convert the raised error into an exit code.
+        """
+        if ":" not in name:
+            matches = set()
+            for core in self.get_cores():
+                (vendor, library, core_name, _) = core.split(":")
+                if core_name.lower() == name.lower():
+                    matches.add(f"{vendor}:{library}:{core_name}")
+            if len(matches) == 1:
+                name = matches.pop()
+            elif len(matches) > 1:
+                _s = f"'{name}' is ambiguous. Potential matches: "
+                _s += ", ".join(f"'{x}'" for x in matches)
+                raise RuntimeError(_s)
+
+        try:
+            return self.get_core(name)
+        except DependencyError as e:
+            raise RuntimeError(
+                f"{name!r} or any of its dependencies requires {e.value!r}, but "
+                "this core was not found"
+            )
+
+    # =====================================================================
+    # Mapping / Lockfiles
+    # =====================================================================
+
+    def set_mapping(self, mapping_vlnvs):
+        """Wrap cm.db.mapping_set(). Raises RuntimeError on a bad mapping."""
+        self.cm.db.mapping_set(mapping_vlnvs or [])
+
+    def load_lockfile(self, filepath):
+        """Wrap cm.db.load_lockfile(). No-op when filepath is None."""
+        if filepath is None:
+            return
+        try:
+            self.cm.db.load_lockfile(filepath)
+        except SyntaxError as e:
+            raise RuntimeError(f"Failed to load lock file, {str(e)}")
+
+    # =====================================================================
+    # Flags / Work Root
+    # =====================================================================
+
+    def build_flags(self, core, target="default", tool=None, extra_flags=None):
+        """Assemble the flag dict that the resolver/edalizer consume.
+
+        Order matters: start from {target, tool, *extra_flags}, then overlay
+        the core's own defaults so the explicit flags win.
+        """
+        flags = {"target": target}
+        if tool:
+            flags["tool"] = tool
+        if extra_flags:
+            flags.update(extra_flags)
+
+        try:
+            flags = dict(core.get_flags(flags["target"]), **flags)
+        except (SyntaxError, RuntimeError) as e:
+            raise RuntimeError(str(e))
+        return flags
 
     def get_work_root(self, core, flags):
         flow = core.get_flow(flags)
@@ -121,6 +202,22 @@ class Fusesoc:
             )
 
         return work_root
+
+    @staticmethod
+    def prepare_work_root(work_root):
+        """Clean out (or create) the work root before a fresh configure."""
+        if os.path.exists(work_root):
+            for f in os.listdir(work_root):
+                if os.path.isdir(os.path.join(work_root, f)):
+                    shutil.rmtree(os.path.join(work_root, f))
+                else:
+                    os.remove(os.path.join(work_root, f))
+        else:
+            os.makedirs(work_root)
+
+    # =====================================================================
+    # Backend
+    # =====================================================================
 
     def get_backend(self, core, flags, backendargs=[]):
 
@@ -189,3 +286,81 @@ class Fusesoc:
         return edam_file, backend_class(
             edam=edalizer.edam, work_root=work_root, verbose=self.config.verbose
         )
+
+    # =====================================================================
+    # High-level lifecycle entry points
+    # =====================================================================
+
+    def fetch(self, core_name):
+        """resolve_core(corename) + core.setup()"""
+        # TODO
+        ...
+
+    def run(
+        self,
+        core_name,
+        *,
+        target="default",
+        tool=None,
+        flags=None,
+        mapping=None,
+        lockfile=None,
+        backendargs=None,
+        do_configure=True,
+        do_build=True,
+        do_run=True,
+        clean=False,
+    ):
+        """Full setup/build/run lifecycle.
+
+        Takes explicit do_* booleans (the 'default to all stages' policy stays
+        in the CLI). Raises RuntimeError on any failure; the caller logs it and
+        decides on an exit code. Returns the configured backend so library
+        callers can reach its artefacts.
+        """
+        self.set_mapping(mapping)
+        self.load_lockfile(lockfile)
+
+        core = self.resolve_core(core_name)
+        flags = self.build_flags(core, target=target, tool=tool, extra_flags=flags)
+
+        # Unconditionally clean out the work root on fresh builds if we use the
+        # old tool API or the clean flag is set.
+        if do_configure and (not core.get_flow(flags) or clean):
+            self.prepare_work_root(self.get_work_root(core, flags))
+
+        try:
+            edam_file, backend = self.get_backend(core, flags, backendargs or [])
+        except FileNotFoundError as e:
+            raise RuntimeError(f'Could not find EDA API file "{e.filename}"')
+
+        # Re-configure only when the Makefile is missing or older than the EDAM.
+        makefile = os.path.join(backend.work_root, "Makefile")
+        do_configure = not os.path.exists(makefile) or (
+            os.path.getmtime(makefile) < os.path.getmtime(edam_file)
+        )
+
+        if do_configure:
+            try:
+                backend.configure()
+            except RuntimeError as e:
+                raise RuntimeError(f"Failed to configure the system\n{str(e)}")
+
+        if do_build:
+            try:
+                backend.build()
+            except RuntimeError as e:
+                raise RuntimeError(f"Failed to build {core.name} : {str(e)}")
+
+        if do_run:
+            try:
+                backend.run()
+            except RuntimeError as e:
+                raise RuntimeError(f"Failed to run {core.name} : {str(e)}")
+
+        return backend
+
+    def clean_generator_cache(self):
+        """clean out generator cache"""
+        # TODO:
+        ...
