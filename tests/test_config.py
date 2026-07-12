@@ -45,9 +45,8 @@ def test_config():
     assert conf.library_root == library_root
 
 
-@pytest.mark.parametrize("from_cli", [False, True])
 @pytest.mark.parametrize("from_config", [False, True])
-def test_config_filters(from_cli, from_config):
+def test_config_filters(from_config):
     import tempfile
 
     from fusesoc.config import Config
@@ -60,16 +59,8 @@ def test_config_filters(from_cli, from_config):
     else:
         config = Config()
 
-    if from_cli:
-        config.args_filters = ["clifilter1", "clifilter2"]
-
-    expected = {
-        (False, False): [],
-        (False, True): ["configfilter1", "configfilter2"],
-        (True, False): ["clifilter1", "clifilter2"],
-        (True, True): ["configfilter1", "configfilter2", "clifilter1", "clifilter2"],
-    }
-    assert config.filters == expected[(from_cli, from_config)]
+    expected = ["configfilter1", "configfilter2"] if from_config else []
+    assert config.filters == expected
 
 
 def test_config_relative_path():

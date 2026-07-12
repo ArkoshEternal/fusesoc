@@ -19,6 +19,7 @@ from simplesat.request import Request
 
 from fusesoc.capi2.coreparser import Core2Parser
 from fusesoc.core import Core
+from fusesoc.errors import FusesocError
 from fusesoc.librarymanager import LibraryManager
 from fusesoc.lockfile import LockFile, LockFileMode
 from fusesoc.vlnv import Vlnv, compare_relation
@@ -26,7 +27,7 @@ from fusesoc.vlnv import Vlnv, compare_relation
 logger = logging.getLogger(__name__)
 
 
-class DependencyError(Exception):
+class DependencyError(FusesocError):
     def __init__(self, value, msg=""):
         self.value = value
         self.msg = msg
@@ -413,7 +414,19 @@ class CoreDB:
 
 
 class CoreManager:
-    def __init__(self, config, library_manager=None):
+    def __init__(
+        self,
+        config,
+        library_manager=None,
+        resolve_env_vars_early=None,
+        allow_additional_properties=None,
+    ):
+        """Discover, query and dependency-solve cores.
+
+        The core-file parser options ``resolve_env_vars_early`` and
+        ``allow_additional_properties`` default to the corresponding values
+        from ``config`` when left as ``None``.
+        """
         self.config = config
         self.db = CoreDB()
         self._lm = (
@@ -421,8 +434,12 @@ class CoreManager:
             if library_manager is None
             else library_manager
         )
+        if resolve_env_vars_early is None:
+            resolve_env_vars_early = config.resolve_env_vars_early
+        if allow_additional_properties is None:
+            allow_additional_properties = config.allow_additional_properties
         self.core2parser = Core2Parser(
-            config.resolve_env_vars_early, config.allow_additional_properties
+            resolve_env_vars_early, allow_additional_properties
         )
         # Files that were rejected during ``find_cores`` because they failed to
         # parse, kept as ``(core_file, error_message)`` tuples. The corresponding

@@ -156,17 +156,9 @@ class Config:
     def _set_default_section(self, name, val):
         self._cp.set(Config.default_section, name, str(val))
 
-    def _arg_or_val(self, arg, val):
-        if hasattr(self, arg):
-            return getattr(self, arg)
-        else:
-            return val
-
     @property
     def filters(self):
-        return self._cp.get(
-            Config.default_section, "filters", fallback=""
-        ).split() + getattr(self, "args_filters", [])
+        return self._cp.get(Config.default_section, "filters", fallback="").split()
 
     @filters.setter
     def filters(self, val):
@@ -174,7 +166,7 @@ class Config:
 
     @property
     def build_root(self):
-        return self._arg_or_val("args_build_root", self._get_build_root())
+        return self._get_build_root()
 
     @build_root.setter
     def build_root(self, val):
@@ -182,7 +174,7 @@ class Config:
 
     @property
     def work_root(self):
-        return self._arg_or_val("args_work_root", self._path_from_cfg("work_root"))
+        return self._path_from_cfg("work_root")
 
     @work_root.setter
     def work_root(self, val):
@@ -214,7 +206,7 @@ class Config:
 
     @property
     def cores_root(self):
-        return self._arg_or_val("args_cores_root", self._paths_from_cfg("cores_root"))
+        return self._paths_from_cfg("cores_root")
 
     @cores_root.setter
     def cores_root(self, val):
@@ -232,11 +224,8 @@ class Config:
 
     @property
     def resolve_env_vars_early(self):
-        return self._arg_or_val(
-            "args_resolve_env_vars_early",
-            self._cp.getboolean(
-                Config.default_section, "resolve_env_vars_early", fallback=False
-            ),
+        return self._cp.getboolean(
+            Config.default_section, "resolve_env_vars_early", fallback=False
         )
 
     @resolve_env_vars_early.setter
@@ -245,11 +234,8 @@ class Config:
 
     @property
     def allow_additional_properties(self):
-        return self._arg_or_val(
-            "args_allow_additional_properties",
-            self._cp.getboolean(
-                Config.default_section, "allow_additional_properties", fallback=False
-            ),
+        return self._cp.getboolean(
+            Config.default_section, "allow_additional_properties", fallback=False
         )
 
     @allow_additional_properties.setter
@@ -259,14 +245,11 @@ class Config:
     @property
     def verbose(self):
         # Runtime config only, not possible to set in config file
-        return self._arg_or_val("args_verbose", False)
+        return getattr(self, "args_verbose", False)
 
     @property
     def no_export(self):
-        return self._arg_or_val(
-            "args_no_export",
-            self._cp.getboolean(Config.default_section, "no_export", fallback=False),
-        )
+        return self._cp.getboolean(Config.default_section, "no_export", fallback=False)
 
     @no_export.setter
     def no_export(self, val):
@@ -274,10 +257,7 @@ class Config:
 
     @property
     def system_name(self):
-        return self._arg_or_val(
-            "args_system_name",
-            self._cp.get(Config.default_section, "system_name", fallback=None),
-        )
+        return self._cp.get(Config.default_section, "system_name", fallback=None)
 
     @system_name.setter
     def system_name(self, val):
