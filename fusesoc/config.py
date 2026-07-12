@@ -243,11 +243,6 @@ class Config:
         self._set_default_section("allow_additional_properties", val)
 
     @property
-    def verbose(self):
-        # Runtime config only, not possible to set in config file
-        return getattr(self, "args_verbose", False)
-
-    @property
     def no_export(self):
         return self._cp.getboolean(Config.default_section, "no_export", fallback=False)
 

@@ -60,6 +60,19 @@ def sign(core, key_file_name, old_sig_file):
     return yaml.dump(sig_data)
 
 
+def sign_to_file(core, key_file_name):
+    """
+    Sign a core file and write the signature next to it as <core_file>.sig.
+
+    Returns the path of the written signature file.
+    """
+    sigfile = core.core_file + ".sig"
+    sig = sign(core, key_file_name, None)
+    with open(sigfile, "w") as f:
+        f.write(sig)
+    return sigfile
+
+
 def verify(core_obj, trust_file_name, sig_file_name):
     """
     Verify signatures of a core and return a dictionary of users whos
