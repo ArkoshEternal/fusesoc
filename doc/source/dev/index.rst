@@ -7,3 +7,4 @@ FuseSoC Developer's Guide
    :caption: Contents
 
    devsetup
+   api
