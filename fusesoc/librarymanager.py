@@ -40,6 +40,43 @@ class Library:
         self.sync_version = sync_version
         self.auto_sync = auto_sync
 
+    @classmethod
+    def from_sync_uri(
+        cls,
+        sync_uri,
+        name=None,
+        location=None,
+        sync_type=None,
+        sync_version=None,
+        auto_sync=True,
+        library_root="fusesoc_libraries",
+    ):
+        """Create a Library from a sync URI, inferring missing properties.
+
+        ``name`` defaults to the last path component of ``sync_uri``.
+        ``sync_type`` defaults to 'local' if ``sync_uri`` is an existing
+        directory, and 'git' otherwise. ``location`` defaults to
+        ``<library_root>/<name>``; for local libraries the (absolutized)
+        ``sync_uri`` itself is used as the location.
+        """
+        name = name or os.path.basename(sync_uri.rstrip("/"))
+
+        if not location:
+            location = os.path.join(library_root, name)
+
+        if not sync_type:
+            sync_type = "local" if os.path.isdir(sync_uri) else "git"
+
+        if sync_type == "local":
+            logger.info(
+                "Interpreting sync-uri '{}' as location for local provider.".format(
+                    sync_uri
+                )
+            )
+            location = os.path.abspath(sync_uri)
+
+        return cls(name, location, sync_type, sync_uri, sync_version, auto_sync)
+
     def update(self, force=False):
         def lib(s):
             return self.name + " : " + s
