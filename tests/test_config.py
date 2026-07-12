@@ -10,7 +10,7 @@ import pytest
 from test_common import cache_root, cores_root, library_root
 
 from fusesoc.config import Config
-from fusesoc.main import _effective_config_path
+from fusesoc.cli.commands import _effective_config_path
 
 build_root = "test_build_root"
 

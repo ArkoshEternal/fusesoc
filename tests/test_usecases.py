@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fusesoc.main import main
+from fusesoc.cli import main
 
 
 @pytest.mark.network

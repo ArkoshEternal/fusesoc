@@ -50,13 +50,14 @@ include = [
   "fusesoc",
   "fusesoc.capi2",
   "fusesoc.capi2.schema",
+  "fusesoc.cli",
   "fusesoc.provider",
   "fusesoc.parser",
   "fusesoc.filters",
 ]
 
 [project.scripts]
-fusesoc = "fusesoc.main:main"
+fusesoc = "fusesoc.cli:main"
 
 [tool.pytest.ini_options]
 markers = [
