@@ -522,11 +522,7 @@ Targets:
             for name in sorted(cd_targets):
                 targets += "{} : {}\n".format(
                     name.ljust(maxlen),
-                    (
-                        cd_targets[name].description
-                        if "description" in cd_targets[name].description
-                        else "<No description>"
-                    ),
+                    (cd_targets[name].description or "<No description>"),
                 )
         else:
             targets = "<No targets>"
@@ -539,39 +535,10 @@ Targets:
             targets,
         )
 
-    def patch(self, dst_dir):
-        # FIXME: Use native python patch instead
-        patches = self.provider.patches  # ty: ignore[unresolved-attribute]
-        for f in patches:
-            patch_file = os.path.abspath(os.path.join(self.core_root, f))
-            if os.path.isfile(patch_file):
-                self._debug(
-                    "  applying patch file: "
-                    + patch_file
-                    + "\n"
-                    + "                   to: "
-                    + os.path.join(dst_dir)
-                )
-                try:
-                    utils.Launcher(
-                        "git",
-                        [
-                            "apply",
-                            "--unsafe-paths",
-                            "--directory",
-                            os.path.join(dst_dir),
-                            patch_file,
-                        ],
-                    ).run()
-                except OSError:
-                    print("Error: Failed to call external command 'patch'")
-                    return False
-        return True
-
     def setup(self):
+        # Fetching includes patch application (Provider._patch)
         if self.provider:
-            if self.provider.fetch():
-                self.patch(self.files_root)
+            self.provider.fetch()
 
     def _debug(self, msg):
         logger.debug(f"{str(self.name)} : {msg}")
