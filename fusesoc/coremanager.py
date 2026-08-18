@@ -2,6 +2,7 @@
 # Licensed under the 2-Clause BSD License, see LICENSE for details.
 # SPDX-License-Identifier: BSD-2-Clause
 
+import copy
 import logging
 import os
 import pathlib
@@ -518,14 +519,11 @@ class CoreManager:
                     if first_line == "CAPI=2":
                         error_msg += "  Just add a colon on the end!"
                     logger.warning(error_msg)
-                    raise ValueError(
-                        "Unable to determine CAPI version from core file {}.".format(
-                            core_file
-                        )
-                    )
-        except Exception:
-            error_msg = f"Unable to determine CAPI version from core file {core_file}"
-            logger.warning(error_msg)
+                    return -1
+        except OSError:
+            logger.warning(
+                f"Unable to determine CAPI version from core file {core_file}"
+            )
             return -1
 
     def _load_cores(self, library, ignored_dirs):
@@ -575,10 +573,16 @@ class CoreManager:
         return {str(x.name): x for x in self.db.find()}
 
     def get_core(self, name):
-        """Get a core with a given name"""
-        c = self.db.find(name)
-        c.name.relation = "=="
-        return c
+        """Get a core with a given name.
+
+        The returned core has its version relation pinned to the resolved
+        version; the object stored in the core database is left untouched.
+        """
+        stored = self.db.find(name)
+        core = copy.copy(stored)
+        core.name = copy.deepcopy(stored.name)
+        core.name.relation = "=="
+        return core
 
     def get_generators(self):
         """Get a dict with all registered generators, indexed by name"""

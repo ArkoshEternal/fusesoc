@@ -939,6 +939,38 @@ def test_dependency_error_str_includes_msg():
     assert str(DependencyError("foo")) == "'foo'"
 
 
+def test_get_core_does_not_mutate_stored_core(tmp_path):
+    """CoreManager.get_core pins the returned core's version relation to '=='
+    without mutating the object stored in the CoreDB.
+    """
+    import os
+
+    from fusesoc.config import Config
+    from fusesoc.coremanager import CoreManager
+    from fusesoc.librarymanager import Library
+    from fusesoc.vlnv import Vlnv
+
+    core_dir = os.path.join(os.path.dirname(__file__), "capi2_cores", "dependencies")
+
+    # A Config with an explicit path keeps the test hermetic: Config() with
+    # path=None would read ~/.config and /etc and mkdir the user's cache dir.
+    config_file = tmp_path / "fusesoc.conf"
+    config_file.write_text(f"[main]\ncache_root = {tmp_path / 'cache'}\n")
+
+    cm = CoreManager(Config(str(config_file)))
+    cm.add_library(Library("deps", core_dir), [])
+
+    stored = cm.db._cores["::dependencies-top:0"]["core"]
+    # The core file declares a versionless name, parsed with relation '>='.
+    assert stored.name.relation == ">="
+
+    returned = cm.get_core(Vlnv("::dependencies-top"))
+
+    assert returned is not stored
+    assert returned.name.relation == "=="
+    assert stored.name.relation == ">="
+
+
 def test_solver_cache_lookup_miss_returns_sentinel():
     """CoreDB._solver_cache_lookup signals a cache miss with a dedicated
     sentinel, so a cached falsy value is not mistaken for a miss.

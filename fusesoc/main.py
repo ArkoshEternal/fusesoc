@@ -17,59 +17,46 @@ import argcomplete
 
 from fusesoc import Flags, __version__, signature
 from fusesoc.config import Config
-from fusesoc.coremanager import DependencyError
-from fusesoc.exceptions import FusesocError, LibraryError, LibraryExistsError
-from fusesoc.fusesoc import Fusesoc
+from fusesoc.exceptions import (
+    AmbiguousCoreError,
+    BackendError,
+    CoreNotFoundError,
+    FusesocError,
+    LibraryError,
+    LibraryExistsError,
+)
+from fusesoc.fusesoc import Fusesoc, resolve_stages
 from fusesoc.librarymanager import Library
 
 logger = logging.getLogger(__name__)
 
 
-def _get_core(cm, core_name):
-    matches = set()
-    if ":" not in core_name:
-        for core in cm.get_cores():
-            (vendor, library, name, _) = core.split(":")
-            if name.lower() == core_name.lower():
-                matches.add(f"{vendor}:{library}:{name}")
-        if len(matches) == 1:
-            core_name = matches.pop()
-        elif len(matches) > 1:
-            _s = f"'{core_name}' is ambiguous. Potential matches: "
-            _s += ", ".join(f"'{x}'" for x in matches)
-            logger.error(_s)
-            exit(1)
-
-    core = None
+def _get_core(fs, core_name):
     try:
-        core = cm.get_core(core_name)
-    except RuntimeError as e:
-        logger.error(str(e))
-        exit(1)
-    except DependencyError as e:
-        msg = (
-            f"{core_name!r} or any of its dependencies requires {e.value!r}, but "
-            "this core was not found"
-        )
+        return fs.resolve_core(core_name)
+    except CoreNotFoundError as e:
+        msg = e.msg
         # If any core file failed to parse during library scanning, the missing
         # core may simply be one that was silently ignored. Surface those errors
         # alongside the "not found" message so they don't get lost in the log
         # scrollback.
-        if getattr(cm, "parse_errors", None):
+        if e.parse_errors:
             msg += (
                 "\n\n"
                 "The following core files failed to parse and were ignored "
                 "during the library scan; one of them may define the missing "
                 "core:"
             )
-            for core_file, err in cm.parse_errors:
+            for core_file, err in e.parse_errors:
                 msg += f"\n  - {core_file}: {err}"
         logger.error(msg)
         exit(1)
-    except SyntaxError as e:
+    except AmbiguousCoreError as e:
         logger.error(str(e))
         exit(1)
-    return core
+    except (RuntimeError, SyntaxError) as e:
+        logger.error(str(e))
+        exit(1)
 
 
 def abort_handler(signal, frame):
@@ -200,19 +187,11 @@ def list_cores(fs, args):
 
 
 def list_tools(fs, args):
-    from edalize.edatool import get_edatool, walk_tool_packages
+    tools = Fusesoc.get_tools()
+    maxlen = max(map(len, tools))
 
-    _tp = list(walk_tool_packages())
-    maxlen = max(map(len, _tp))
-
-    for tool_name in _tp:
-        try:
-            tool_class = get_edatool(tool_name)
-            desc = tool_class.get_doc(0)["description"]
-            print(f"{tool_name:{maxlen}} : {desc}")
-        # Ignore any misbehaving backends
-        except Exception:
-            pass
+    for tool_name, desc in tools.items():
+        print(f"{tool_name:{maxlen}} : {desc}")
 
 
 def gen_list(fs, args):
@@ -282,35 +261,25 @@ def gen_clean(fs, args):
 
 
 def run(fs, args):
-    stages = (args.setup, args.build, args.run)
-
-    # Always run setup if build is true
-    args.setup |= args.build
-
-    # Run all stages by default if no stage flags are set
-    if stages == (False, False, False):
-        do_configure = True
-        do_build = True
-        do_run = True
-    elif stages == (True, False, True):
-        logger.error("Configure and run without build is invalid")
+    # Validate the stage combination before anything else, like the CLI
+    # has always done (even a nonexistent core name reports this first).
+    try:
+        resolve_stages(args.setup, args.build, args.run)
+    except FusesocError as e:
+        logger.error(str(e))
         exit(1)
-    else:
-        do_configure = args.setup
-        do_build = args.build
-        do_run = args.run
 
     flags = Flags.from_cli_strings(args.flag, target=args.target, tool=args.tool)
 
     try:
-        fs.cm.db.mapping_set(args.mapping)
+        fs.set_mappings(args.mapping)
     except RuntimeError as e:
-        logger.error(e)
+        logger.error(str(e))
         exit(1)
 
     if args.lockfile is not None:
         try:
-            fs.cm.db.load_lockfile(args.lockfile)
+            fs.load_lockfile(args.lockfile)
         except SyntaxError as e:
             logger.error(f"Failed to load lock file, {str(e)}")
             exit(1)
@@ -318,61 +287,33 @@ def run(fs, args):
     core = _get_core(fs, args.system)
 
     try:
-        flags = flags.with_core_defaults(core)
+        fs.run(
+            core,
+            flags,
+            setup=args.setup,
+            build=args.build,
+            run=args.run,
+            clean=args.clean,
+            backendargs=args.backendargs,
+        )
+    except BackendError as e:
+        if e.stage == "configure":
+            logger.error("Failed to configure the system")
+            logger.error(e.msg)
+        elif e.stage == "build":
+            logger.error(f"Failed to build {str(core.name)} : {e.msg}")
+        else:
+            logger.error(f"Failed to run {str(core.name)} : {e.msg}")
+        exit(1)
+    except FileNotFoundError as e:
+        logger.error(f'Could not find EDA API file "{e.filename}"')
+        exit(1)
     except SyntaxError as e:
         logger.error(str(e))
         exit(1)
     except RuntimeError as e:
         logger.error(str(e))
         exit(1)
-
-    # Unconditionally clean out the work root on fresh builds
-    # if we use the old tool API or clean flag is set
-    if do_configure and (not core.get_flow(flags) or args.clean):
-        try:
-            prepare_work_root(fs.get_work_root(core, flags))
-        except RuntimeError as e:
-            logger.error(e)
-            exit(1)
-
-    # Frontend/backend separation
-
-    try:
-        edam_file, backend = fs.get_backend(core, flags, args.backendargs)
-
-    except RuntimeError as e:
-        logger.error(str(e))
-        exit(1)
-    except FileNotFoundError as e:
-        logger.error(f'Could not find EDA API file "{e.filename}"')
-        exit(1)
-
-    makefile = os.path.join(backend.work_root, "Makefile")
-    do_configure = not os.path.exists(makefile) or (
-        os.path.getmtime(makefile) < os.path.getmtime(edam_file)
-    )
-
-    if do_configure:
-        try:
-            backend.configure()
-        except RuntimeError as e:
-            logger.error("Failed to configure the system")
-            logger.error(str(e))
-            exit(1)
-
-    if do_build:
-        try:
-            backend.build()
-        except RuntimeError as e:
-            logger.error(f"Failed to build {str(core.name)} : {str(e)}")
-            exit(1)
-
-    if do_run:
-        try:
-            backend.run()
-        except RuntimeError as e:
-            logger.error(f"Failed to run {str(core.name)} : {str(e)}")
-            exit(1)
 
 
 def config(fs, args):
@@ -396,59 +337,32 @@ def config(fs, args):
         conf.write()
 
 
-# Clean out old work root
-def prepare_work_root(work_root):
-    if os.path.exists(work_root):
-        for f in os.listdir(work_root):
-            if os.path.isdir(os.path.join(work_root, f)):
-                shutil.rmtree(os.path.join(work_root, f))
-            else:
-                os.remove(os.path.join(work_root, f))
-    else:
-        os.makedirs(work_root)
-
-
 def update(fs, args):
     fs.update_libraries(args.libraries)
 
 
+def _completer_fusesoc(parsed_args):
+    """Bootstrap a Fusesoc instance for argcomplete completers."""
+    config = Config(
+        Config.resolve_path(parsed_args.config),
+        overrides=args_to_overrides(parsed_args),
+    )
+    return Fusesoc(config)
+
+
 class CoreCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(
-            Config.resolve_path(parsed_args.config),
-            overrides=args_to_overrides(parsed_args),
-        )
-        fs = Fusesoc(config)
-        cores = fs.get_cores()
-        return cores
+        return _completer_fusesoc(parsed_args).get_cores()
 
 
 class ToolCompleter:
     def __call__(self, parsed_args, **kwargs):
-        from edalize.edatool import get_edatool, walk_tool_packages
-
-        _tp = list(walk_tool_packages())
-        tools = []
-        for tool_name in _tp:
-            try:
-                tool_class = get_edatool(tool_name)
-                if tool_class.get_doc(0)["description"]:
-                    tools += [tool_name]
-            # Ignore any misbehaving backends
-            except Exception:
-                pass
-        return tools
+        return [name for name, desc in Fusesoc.get_tools().items() if desc]
 
 
 class GenCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(
-            Config.resolve_path(parsed_args.config),
-            overrides=args_to_overrides(parsed_args),
-        )
-        fs = Fusesoc(config)
-        cores = fs.get_generators()
-        return cores
+        return _completer_fusesoc(parsed_args).get_generators()
 
 
 def get_parser():
