@@ -8,11 +8,14 @@ from fusesoc import utils
 
 
 class Generator:
-    filesets: dict = {}
-    parameters: dict = {}
-    targets: dict = {}
-
     def __init__(self, data=None, resolve_env_vars=False):
+        """*data* is the generator input as a dict; when omitted it is read
+        from the file named by sys.argv[1] (the generator-subprocess
+        convention)."""
+        self.filesets: dict = {}
+        self.parameters: dict = {}
+        self.targets: dict = {}
+
         if data is None:
             data = utils.yaml_fread(sys.argv[1], resolve_env_vars)
 
@@ -28,7 +31,7 @@ class Generator:
     ):
         if fileset not in self.filesets:
             self.filesets[fileset] = {"files": []}
-        self.filesets[fileset]["files"] = files
+        self.filesets[fileset]["files"] += list(files)
         self.filesets[fileset]["file_type"] = file_type
         self.filesets[fileset]["logical_name"] = logical_name
 
