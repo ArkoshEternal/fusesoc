@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 class Fusesoc:
-    def __init__(self, config):
+    def __init__(self, config, verbose=False):
         self.config = config
+        self.verbose = verbose
 
         self.lm = LibraryManager()
         self.cm = CoreManager(self.config, library_manager=self.lm)
@@ -192,5 +193,5 @@ class Fusesoc:
             edalizer.to_yaml(edam_file)
 
         return edam_file, backend_class(
-            edam=edalizer.edam, work_root=work_root, verbose=self.config.verbose
+            edam=edalizer.edam, work_root=work_root, verbose=self.verbose
         )

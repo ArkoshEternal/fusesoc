@@ -12,25 +12,17 @@ import shutil
 import signal
 import sys
 import threading
-from pathlib import Path
 
 import argcomplete
 
 from fusesoc import Flags, __version__, signature
 from fusesoc.config import Config
 from fusesoc.coremanager import DependencyError
-from fusesoc.exceptions import FusesocError, LibraryError
+from fusesoc.exceptions import FusesocError, LibraryError, LibraryExistsError
 from fusesoc.fusesoc import Fusesoc
 from fusesoc.librarymanager import Library
 
 logger = logging.getLogger(__name__)
-
-
-def _effective_config_path(args_config):
-    """Return the config path to use, with CLI taking precedence over env var."""
-    if args_config:
-        return args_config
-    return os.environ.get("FUSESOC_CONFIG")
 
 
 def _get_core(cm, core_name):
@@ -146,18 +138,18 @@ def add_library(fs, args):
         args.sync_submodules,
     )
 
-    effective_config = _effective_config_path(args.config)
+    effective_config = Config.resolve_path(args.config)
     if effective_config:
-        config = Config(effective_config)
+        config = Config(effective_config, create_if_missing=True)
     elif vars(args)["global"]:
-        xdg_config_home = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
-        config_file = os.path.join(xdg_config_home, "fusesoc", "fusesoc.conf")
-        config = Config(config_file)
+        config = Config(Config.global_config_path(), create_if_missing=True)
     else:
-        config = Config("fusesoc.conf")
+        config = Config("fusesoc.conf", create_if_missing=True)
 
     try:
         config.add_library(library)
+    except LibraryExistsError as e:
+        logger.warning(str(e))
     except LibraryError as e:
         logger.error(str(e))
         exit(1)
@@ -409,21 +401,24 @@ def run(fs, args):
 
 
 def config(fs, args):
-    conf = Config(path=_effective_config_path(args.config), create_if_missing=False)
+    conf = Config(path=Config.resolve_path(args.config))
 
-    if not hasattr(conf, args.key):
+    # Only actual config options are valid keys, not arbitrary attributes
+    prop = getattr(type(conf), args.key, None)
+    if not isinstance(prop, property):
         logger.error(f"Invalid config parameter: {args.key}")
         exit(1)
 
     if not args.value:
         # Read
-        if hasattr(conf, args.key):
-            print(getattr(conf, args.key))
+        print(getattr(conf, args.key))
     else:
         # Write
-        if hasattr(conf, args.key):
-            setattr(conf, args.key, args.value)
-            conf.write()
+        if prop.fset is None:
+            logger.error(f"Config parameter '{args.key}' cannot be set")
+            exit(1)
+        setattr(conf, args.key, args.value)
+        conf.write()
 
 
 # Clean out old work root
@@ -445,9 +440,9 @@ def update(fs, args):
 class CoreCompleter:
     def __call__(self, parsed_args, **kwargs):
         config = Config(
-            _effective_config_path(parsed_args.config), create_if_missing=False
+            Config.resolve_path(parsed_args.config),
+            overrides=args_to_overrides(parsed_args),
         )
-        args_to_config(parsed_args, config)
         fs = Fusesoc(config)
         cores = fs.get_cores()
         return cores
@@ -473,9 +468,9 @@ class ToolCompleter:
 class GenCompleter:
     def __call__(self, parsed_args, **kwargs):
         config = Config(
-            _effective_config_path(parsed_args.config), create_if_missing=False
+            Config.resolve_path(parsed_args.config),
+            overrides=args_to_overrides(parsed_args),
         )
-        args_to_config(parsed_args, config)
         fs = Fusesoc(config)
         cores = fs.get_generators()
         return cores
@@ -772,46 +767,36 @@ def parse_args(argv):
         return None
 
 
-def args_to_config(args, config):
-    if hasattr(args, "resolve_env_vars_early") and args.resolve_env_vars_early:
-        setattr(config, "args_resolve_env_vars_early", args.resolve_env_vars_early)
+def args_to_overrides(args):
+    """Collect config overrides from parsed CLI arguments."""
+    overrides = {}
 
-    if (
-        hasattr(args, "allow_additional_properties")
-        and args.allow_additional_properties
+    for name in (
+        "resolve_env_vars_early",
+        "allow_additional_properties",
+        "no_export",
     ):
-        setattr(
-            config, "args_allow_additional_properties", args.allow_additional_properties
-        )
+        if getattr(args, name, False):
+            overrides[name] = True
 
-    if args.verbose:
-        setattr(config, "args_verbose", args.verbose)
+    for name in ("build_root", "work_root", "system_name"):
+        if getattr(args, name, None):
+            overrides[name] = getattr(args, name)
 
-    if hasattr(args, "no_export") and args.no_export:
-        setattr(config, "args_no_export", args.no_export)
+    if getattr(args, "cores_root", None):
+        overrides["cores_root"] = args.cores_root
 
-    if hasattr(args, "build_root") and args.build_root and len(args.build_root) > 0:
-        setattr(config, "args_build_root", args.build_root)
+    if getattr(args, "filter", None):
+        overrides["filters"] = args.filter
 
-    if hasattr(args, "work_root") and args.work_root and len(args.work_root) > 0:
-        setattr(config, "args_work_root", args.work_root)
-
-    if hasattr(args, "cores_root") and args.cores_root and len(args.cores_root) > 0:
-        setattr(config, "args_cores_root", args.cores_root)
-
-    if hasattr(args, "system_name") and args.system_name and len(args.system_name) > 0:
-        setattr(config, "args_system_name", args.system_name)
-
-    if hasattr(args, "filter"):
-        config.args_filters = args.filter
+    return overrides
 
 
 def fusesoc(args):
     Fusesoc.init_logging(args.verbose, args.monochrome, args.log_file)
 
-    config = Config(_effective_config_path(args.config), create_if_missing=False)
-    args_to_config(args, config)
-    fs = Fusesoc(config)
+    config = Config(Config.resolve_path(args.config), overrides=args_to_overrides(args))
+    fs = Fusesoc(config, verbose=args.verbose)
 
     # Run the function. Errors raised by the library are reported here;
     # subcommands only handle errors where they can add context.
