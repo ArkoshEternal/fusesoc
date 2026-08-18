@@ -23,6 +23,7 @@ Get started by :ref:`installing FuseSoC <ug_installation>`, read a bit about the
    installation.rst
    overview.rst
    cli.rst
+   library_usage.rst
    build_system/index.rst
    package_manager/index.rst
    knowledgebase.rst

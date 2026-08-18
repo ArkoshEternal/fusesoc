@@ -55,6 +55,9 @@ include = [
   "fusesoc.filters",
 ]
 
+[tool.setuptools.package-data]
+fusesoc = ["py.typed"]
+
 [project.scripts]
 fusesoc = "fusesoc.main:main"
 
@@ -83,7 +86,7 @@ target-version = "py310"
 mypy_path = "."
 namespace_packages = true
 explicit_package_bases = true
-files = ["fusesoc/capi2/"]
+files = ["fusesoc/__init__.py", "fusesoc/exceptions.py", "fusesoc/library.py", "fusesoc/capi2/"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -106,6 +109,7 @@ module = [
   "fusesoc.coremanager",
   "fusesoc.edalizer",
   "fusesoc.lockfile",
+  "fusesoc.main",
   "fusesoc.config",
   "fusesoc.librarymanager",
   "fusesoc.fusesoc",
