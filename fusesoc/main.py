@@ -11,7 +11,7 @@ import pathlib
 import shutil
 import signal
 import sys
-import warnings
+import threading
 from pathlib import Path
 
 import argcomplete
@@ -19,7 +19,7 @@ import argcomplete
 from fusesoc import __version__, signature
 from fusesoc.config import Config
 from fusesoc.coremanager import DependencyError
-from fusesoc.exceptions import LibraryError
+from fusesoc.exceptions import FusesocError, LibraryError
 from fusesoc.fusesoc import Fusesoc
 from fusesoc.librarymanager import Library
 
@@ -87,16 +87,6 @@ def abort_handler(signal, frame):
     logger.info("****************************")
     print("")
     sys.exit(0)
-
-
-signal.signal(signal.SIGINT, abort_handler)
-
-
-def pgm(fs, args):
-    warnings.warn(
-        "The 'pgm' subcommand has been removed. "
-        "Use 'fusesoc run --target=synth --run' instead."
-    )
 
 
 def fetch(fs, args):
@@ -832,18 +822,29 @@ def fusesoc(args):
     args_to_config(args, config)
     fs = Fusesoc(config)
 
-    # Run the function
-    args.func(fs, args)
+    # Run the function. Errors raised by the library are reported here;
+    # subcommands only handle errors where they can add context.
+    try:
+        args.func(fs, args)
+    except FusesocError as e:
+        logger.error(str(e))
+        exit(1)
 
 
 def main():
+    # Signal handlers can only be registered in the main thread; embedders
+    # calling main() from a worker thread keep their own SIGINT handling.
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, abort_handler)
+
     args = parse_args(sys.argv[1:])
     if not args:
-        exit(0)
+        return 0
 
     logger.debug("Command line arguments: " + str(sys.argv))
 
     fusesoc(args)
+    return 0
 
 
 if __name__ == "__main__":
