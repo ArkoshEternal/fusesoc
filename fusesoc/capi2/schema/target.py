@@ -6,7 +6,7 @@ from typing import Any, Generic, Literal
 
 from pydantic import Field, JsonValue, model_validator
 
-from ..flags import Flags
+from ..flags import FlagsLike
 from .common import ExprOrStr, FrozenModel, _merge_append_keys
 
 
@@ -48,7 +48,7 @@ class Target(FrozenModel, Generic[ExprOrStr]):
     flow: str | None = None
     flow_options: Mapping[str, JsonValue] = Field(default_factory=dict)
     tools: Mapping[ExprOrStr, Mapping[str, JsonValue]] = Field(default_factory=dict)
-    flags: Flags = Field(default_factory=dict)
+    flags: FlagsLike = Field(default_factory=dict)
     hooks: Hooks[ExprOrStr] = Field(default_factory=Hooks)
     toplevel: tuple[ExprOrStr, ...] = ()
     filesets: tuple[ExprOrStr, ...] = ()

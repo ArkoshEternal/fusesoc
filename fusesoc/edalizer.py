@@ -14,6 +14,7 @@ from typing import Sequence
 
 from fusesoc import utils
 from fusesoc.capi2.coreparser import Core2Parser
+from fusesoc.capi2.flags import derive
 from fusesoc.core import Core
 from fusesoc.utils import Launcher, merge_dict
 from fusesoc.vlnv import Vlnv
@@ -125,10 +126,7 @@ class Edalizer:
 
     def _core_flags(self, core):
         """Get flags for a specific core"""
-
-        core_flags = self.flags.copy()
-        core_flags["is_toplevel"] = core.name == self.toplevel
-        return core_flags
+        return derive(self.flags, is_toplevel=(core.name == self.toplevel))
 
     def setup_cores(self):
         """Setup cores: fetch resources, patch them, etc."""

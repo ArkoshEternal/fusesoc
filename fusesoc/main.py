@@ -16,7 +16,7 @@ from pathlib import Path
 
 import argcomplete
 
-from fusesoc import __version__, signature
+from fusesoc import Flags, __version__, signature
 from fusesoc.config import Config
 from fusesoc.coremanager import DependencyError
 from fusesoc.exceptions import FusesocError, LibraryError
@@ -333,16 +333,7 @@ def run(fs, args):
         do_build = args.build
         do_run = args.run
 
-    flags = {"target": args.target or "default"}
-    if args.tool:
-        flags["tool"] = args.tool
-    for flag in args.flag:
-        if flag[0] == "+":
-            flags[flag[1:]] = True
-        elif flag[0] == "-":
-            flags[flag[1:]] = False
-        else:
-            flags[flag] = True
+    flags = Flags.from_cli_strings(args.flag, target=args.target, tool=args.tool)
 
     try:
         fs.cm.db.mapping_set(args.mapping)
@@ -360,7 +351,7 @@ def run(fs, args):
     core = _get_core(fs, args.system)
 
     try:
-        flags = dict(core.get_flags(flags["target"]), **flags)
+        flags = flags.with_core_defaults(core)
     except SyntaxError as e:
         logger.error(str(e))
         exit(1)

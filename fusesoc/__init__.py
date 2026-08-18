@@ -29,6 +29,7 @@ from fusesoc.exceptions import (
 )
 
 if TYPE_CHECKING:
+    from fusesoc.capi2.flags import Flags
     from fusesoc.config import Config
     from fusesoc.edalizer import Edalizer
     from fusesoc.fusesoc import Fusesoc
@@ -53,6 +54,7 @@ except ImportError:
 _LAZY_EXPORTS = {
     "Config": "fusesoc.config",
     "Edalizer": "fusesoc.edalizer",
+    "Flags": "fusesoc.capi2.flags",
     "Fusesoc": "fusesoc.fusesoc",
     "Library": "fusesoc.library",
     "Vlnv": "fusesoc.vlnv",
@@ -68,6 +70,7 @@ __all__ = [
     "DependencyError",
     "Edalizer",
     "FlagError",
+    "Flags",
     "Fusesoc",
     "FusesocError",
     "Library",

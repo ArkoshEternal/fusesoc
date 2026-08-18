@@ -538,7 +538,9 @@ def test_capi2_get_tool_options():
     core_file = os.path.join(tests_dir, "capi2_cores", "misc", "targets.core")
     core = Core(Core2Parser(), core_file)
 
-    with pytest.raises(KeyError):
+    from fusesoc.exceptions import FlagError
+
+    with pytest.raises(FlagError):
         core.get_tool_options({})
 
     assert {} == core.get_tool_options({"tool": "icarus"})
