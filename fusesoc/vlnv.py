@@ -124,7 +124,8 @@ class Vlnv:
     __repr__ = __str__
 
     def __hash__(self):
-        return hash(str(self))
+        # Must match __eq__, which ignores the revision
+        return hash((self.vendor, self.library, self.name, self.version))
 
     def depstr(self):
         if self.relation == "==":
