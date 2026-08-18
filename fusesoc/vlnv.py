@@ -6,6 +6,8 @@ import copy
 import re
 from functools import total_ordering
 
+from fusesoc.exceptions import VlnvError
+
 _VLNV_PART_RE = re.compile(r"^[A-Za-z0-9_.-]*$")
 
 
@@ -19,7 +21,7 @@ class Vlnv:
             return s[0].isdigit()
 
         if not s:
-            raise SyntaxError("Core name is empty string")
+            raise VlnvError("Core name is empty string")
 
         if s.startswith("!"):
             self.conflict = True
@@ -82,7 +84,7 @@ class Vlnv:
             else:
                 self.version = vlnv_parts[3]
         else:
-            raise SyntaxError(f"Illegal core name '{s}'")
+            raise VlnvError(f"Illegal core name '{s}'")
 
         if self.version or (self.revision > 0):
             if not self.relation:
@@ -94,7 +96,7 @@ class Vlnv:
         else:
             if self.relation:
                 _s = "{}: '{}' operator requires a version "
-                raise SyntaxError(_s.format(s, self.relation))
+                raise VlnvError(_s.format(s, self.relation))
             # No version specifier means any version i.e. >=0
             self.version = "0"
             self.relation = default_relation
@@ -102,7 +104,7 @@ class Vlnv:
         for field in ("vendor", "library", "name", "version"):
             value = getattr(self, field)
             if not _VLNV_PART_RE.match(value):
-                raise SyntaxError(
+                raise VlnvError(
                     "Illegal character in core name '{}': {} '{}' may only "
                     "contain alphanumerics, '.', '-', and '_'".format(s, field, value)
                 )

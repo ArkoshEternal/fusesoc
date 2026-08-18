@@ -5,6 +5,7 @@
 import logging
 import os.path
 
+from fusesoc.exceptions import LibraryError
 from fusesoc.library import Library
 from fusesoc.provider.provider import Provider
 
@@ -15,8 +16,9 @@ class Local(Provider):
     @staticmethod
     def init_library(library: Library) -> None:
         if not os.path.isdir(library.location):
-            logger.error(f"Local library at location '{library.location}' not found.")
-            exit(1)
+            raise LibraryError(
+                f"Local library at location '{library.location}' not found."
+            )
 
     def _checkout(self, local_dir):
         pass

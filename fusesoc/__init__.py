@@ -12,6 +12,22 @@ without notice.
 import importlib
 from typing import TYPE_CHECKING
 
+from fusesoc.exceptions import (
+    AmbiguousCoreError,
+    BackendError,
+    ConfigError,
+    CoreNotFoundError,
+    CoreParseError,
+    DependencyError,
+    FlagError,
+    FusesocError,
+    LibraryError,
+    LibraryExistsError,
+    LockfileError,
+    ToolOrFlowError,
+    VlnvError,
+)
+
 if TYPE_CHECKING:
     from fusesoc.config import Config
     from fusesoc.edalizer import Edalizer
@@ -43,11 +59,24 @@ _LAZY_EXPORTS = {
 }
 
 __all__ = [
+    "AmbiguousCoreError",
+    "BackendError",
     "Config",
+    "ConfigError",
+    "CoreNotFoundError",
+    "CoreParseError",
+    "DependencyError",
     "Edalizer",
+    "FlagError",
     "Fusesoc",
+    "FusesocError",
     "Library",
+    "LibraryError",
+    "LibraryExistsError",
+    "LockfileError",
+    "ToolOrFlowError",
     "Vlnv",
+    "VlnvError",
 ]
 
 

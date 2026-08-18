@@ -5,6 +5,7 @@
 import fastjsonschema
 
 from fusesoc import utils
+from fusesoc.exceptions import CoreParseError
 
 
 class CoreParser:
@@ -30,7 +31,7 @@ class CoreParser:
         try:
             self._validate = fastjsonschema.compile(self._schema_data)
         except fastjsonschema.JsonSchemaDefinitionException as e:
-            raise SyntaxError(f"\nError parsing JSON Schema: {e}")
+            raise CoreParseError(f"\nError parsing JSON Schema: {e}")
 
     def _set_additional_properties(self, schema, val):
         if isinstance(schema, list):
@@ -63,7 +64,7 @@ class CoreParser:
         try:
             self._validate(capi_data)
         except fastjsonschema.JsonSchemaException as e:
-            raise SyntaxError(f"\nError validating {e}")
+            raise CoreParseError(f"\nError validating {e}")
 
     def get_version(self):
         return self._version

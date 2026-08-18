@@ -6,6 +6,7 @@ import copy
 import re
 
 from fusesoc import utils
+from fusesoc.exceptions import CoreParseError
 
 
 class Inheritance:
@@ -36,6 +37,6 @@ class Inheritance:
         if isinstance(parent, dict):
             capi = utils.merge_dict(parent, capi, concat_list_appends_only=True)
         else:
-            raise SyntaxError("Invalid use of inheritance operator")
+            raise CoreParseError("Invalid use of inheritance operator")
 
         return capi

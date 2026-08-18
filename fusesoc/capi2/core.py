@@ -15,6 +15,7 @@ from typing import Any, Literal, Mapping, Sequence
 
 from fusesoc import signature, utils
 from fusesoc.capi2.core_handle import CoreHandle
+from fusesoc.exceptions import CoreParseError
 from fusesoc.provider.provider import get_provider
 from fusesoc.vlnv import Vlnv
 
@@ -154,7 +155,7 @@ class CoreInterface:
                     for script in scripts:
                         cd_script = cd_scripts.get(script)
                         if cd_script is None:
-                            raise SyntaxError(
+                            raise CoreParseError(
                                 "Script '{}', requested by target '{}', was not found".format(
                                     script, get_target_name(flags)
                                 )
@@ -301,7 +302,7 @@ class CoreInterface:
                         return False
                     else:
                         _s = "{}: Invalid default value '{}' for bool parameter {}"
-                        raise SyntaxError(_s.format(self.name, default, p))
+                        raise CoreParseError(_s.format(self.name, default, p))
                 return default
             elif datatype == "int":
                 if isinstance(default, int):
@@ -326,7 +327,7 @@ class CoreInterface:
 
             if datatype not in ["bool", "file", "int", "real", "str"]:
                 _s = "{} : Invalid datatype '{}' for parameter {}"
-                raise SyntaxError(_s.format(self.name, datatype, p))
+                raise CoreParseError(_s.format(self.name, datatype, p))
 
             if paramtype not in [
                 "cmdlinearg",
@@ -336,7 +337,7 @@ class CoreInterface:
                 "vlogparam",
             ]:
                 _s = "{} : Invalid paramtype '{}' for parameter {}"
-                raise SyntaxError(_s.format(self.name, paramtype, p))
+                raise CoreParseError(_s.format(self.name, paramtype, p))
             parsed_param = {
                 "datatype": str(core_param["datatype"]),
                 "paramtype": paramtype,
@@ -379,7 +380,7 @@ class CoreInterface:
                     parameters[p] = ext_parameters[p]
 
                 else:
-                    raise SyntaxError(
+                    raise CoreParseError(
                         "Parameter '{}', requested by target '{}', was not found".format(
                             p, get_target_name(flags)
                         )
@@ -415,7 +416,7 @@ class CoreInterface:
             return " ".join(toplevel) if isinstance(toplevel, Sequence) else toplevel
         else:
             s = "{} : Target '{}' has no toplevel"
-            raise SyntaxError(s.format(self.name, target_name))
+            raise CoreParseError(s.format(self.name, target_name))
 
     def get_ttptttg(self, flags):
         self._debug(f"Getting ttptttg for flags {str(flags)}")
@@ -439,7 +440,7 @@ class CoreInterface:
         for gen_name, gen_params in _ttptttg:
             cd_generate = self.get_data(flags).generate
             if gen_name not in cd_generate:
-                raise SyntaxError(
+                raise CoreParseError(
                     "Generator instance '{}', requested by target '{}', was not found".format(
                         gen_name, target_name
                     )
@@ -595,7 +596,7 @@ Targets:
 
         for fs in target.get("filesets", []):
             if fs not in cd_filesets:
-                raise SyntaxError(
+                raise CoreParseError(
                     "{} : Fileset '{}', requested by target '{}', was not found".format(
                         self.name, fs, target_name
                     )

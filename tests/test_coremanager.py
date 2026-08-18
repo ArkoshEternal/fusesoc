@@ -774,3 +774,15 @@ def test_find_cores_records_parse_errors(tmp_path):
     bad_file, msg = cm.parse_errors[0]
     assert bad_file.endswith("broken.core")
     assert "must be array" in msg
+
+
+def test_dependency_error_str_includes_msg():
+    """DependencyError stringification includes both the failing value and,
+    when given, the explanatory msg."""
+    from fusesoc.coremanager import DependencyError
+
+    e = DependencyError("foo", msg="bar")
+    assert str(e) == "'foo': bar"
+    assert e.value == "foo"
+    assert e.msg == "bar"
+    assert str(DependencyError("foo")) == "'foo'"

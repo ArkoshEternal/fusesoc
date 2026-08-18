@@ -19,6 +19,7 @@ import argcomplete
 from fusesoc import __version__, signature
 from fusesoc.config import Config
 from fusesoc.coremanager import DependencyError
+from fusesoc.exceptions import LibraryError
 from fusesoc.fusesoc import Fusesoc
 from fusesoc.librarymanager import Library
 
@@ -167,6 +168,9 @@ def add_library(fs, args):
 
     try:
         config.add_library(library)
+    except LibraryError as e:
+        logger.error(str(e))
+        exit(1)
     except RuntimeError as e:
         logger.error("`add library` failed: " + str(e))
         exit(1)

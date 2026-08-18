@@ -19,20 +19,15 @@ from simplesat.request import Request
 
 from fusesoc.capi2.coreparser import Core2Parser
 from fusesoc.core import Core
+
+# DependencyError is re-exported here for backwards compatibility; its
+# canonical home is fusesoc.exceptions.
+from fusesoc.exceptions import DependencyError
 from fusesoc.librarymanager import LibraryManager
 from fusesoc.lockfile import LockFile, LockFileMode
 from fusesoc.vlnv import Vlnv, compare_relation
 
 logger = logging.getLogger(__name__)
-
-
-class DependencyError(Exception):
-    def __init__(self, value, msg=""):
-        self.value = value
-        self.msg = msg
-
-    def __str__(self):
-        return repr(self.value)
 
 
 class CoreDB:
