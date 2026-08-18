@@ -51,7 +51,6 @@ include = [
   "fusesoc.capi2",
   "fusesoc.capi2.schema",
   "fusesoc.provider",
-  "fusesoc.parser",
   "fusesoc.filters",
 ]
 
@@ -103,7 +102,6 @@ module = [
   "fusesoc.signature",
   "fusesoc.vlnv",
   "fusesoc.provider.*",
-  "fusesoc.parser.*",
   "fusesoc.coremanager",
   "fusesoc.edalizer",
   "fusesoc.lockfile",
