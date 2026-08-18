@@ -18,6 +18,7 @@ from simplesat.repository import Repository
 from simplesat.request import Request
 
 from fusesoc.capi2.coreparser import Core2Parser
+from fusesoc.capi2.flags import derive
 from fusesoc.core import Core
 
 # DependencyError is re-exported here for backwards compatibility; its
@@ -28,6 +29,9 @@ from fusesoc.lockfile import LockFile, LockFileMode
 from fusesoc.vlnv import Vlnv, compare_relation
 
 logger = logging.getLogger(__name__)
+
+# Sentinel distinguishing a solver-cache miss from a cached falsy value.
+_CACHE_MISS = object()
 
 
 class CoreDB:
@@ -91,15 +95,15 @@ class CoreDB:
     def load_lockfile(self, filepath: pathlib.Path, disable_store: bool = False):
         mode = LockFileMode.LOAD if disable_store else LockFileMode.STORE
         self._lockfile = LockFile.load(filepath, mode)
+        # Pinned versions change dependency solutions; drop stale ones.
+        self._solver_cache_invalidate_all()
 
     def store_lockfile(self, cores):
         if self._lockfile.update(cores):
             self._lockfile.store()
 
     def _solver_cache_lookup(self, key):
-        if key in self._solver_cache:
-            return self._solver_cache[key]
-        return False
+        return self._solver_cache.get(key, _CACHE_MISS)
 
     def _solver_cache_store(self, key, value):
         self._solver_cache[key] = value
@@ -110,18 +114,6 @@ class CoreDB:
 
     def _solver_cache_invalidate_all(self):
         self._solver_cache = {}
-
-    def _hash_flags_dict(self, flags):
-        """Hash the flags dict.
-
-        Python's mutable sequences, like dict, are not generally hashable. For
-        the dict we're using for the flags, we can simply implement hashing
-        ourselves without the need to worry about nested dicts.
-        """
-        h = 0
-        for pair in sorted(flags.items()):
-            h ^= hash(pair)
-        return h
 
     def _lockfile_replace(self, core: Vlnv):
         """Try to pin the core version from cores defined in the lock file"""
@@ -238,6 +230,8 @@ class CoreDB:
             mappings.update(new_mapping)
 
         self._mapping = MappingProxyType(mappings)
+        # Mappings change dependency solutions; drop stale ones.
+        self._solver_cache_invalidate_all()
 
     def solve(self, top_core, flags):
         return self._solve(top_core, flags)
@@ -271,7 +265,7 @@ class CoreDB:
             conflict_set.remove(real_pkg)
         return conflict_map
 
-    def _solve(self, top_core, flags={}, only_matching_vlnv=False):
+    def _solve(self, top_core, flags=MappingProxyType({}), only_matching_vlnv=False):
         def eq_vln(this, that):
             return (
                 this.vendor == that.vendor
@@ -279,24 +273,30 @@ class CoreDB:
                 and this.name == that.name
             )
 
+        def _core_flags(core):
+            """Flags as seen by a specific core during resolution."""
+            if only_matching_vlnv:
+                return derive(flags)
+            return derive(flags, is_toplevel=(core.name == top_core))
+
         # Try to return a cached result
-        solver_cache_key = (top_core, self._hash_flags_dict(flags), only_matching_vlnv)
+        solver_cache_key = (top_core, frozenset(flags.items()), only_matching_vlnv)
         cached_solution = self._solver_cache_lookup(solver_cache_key)
-        if cached_solution:
+        if cached_solution is not _CACHE_MISS:
             return cached_solution
 
         repo = Repository()
-        _flags = flags.copy()
         cores = [x["core"] for x in self._cores.values()]
         conflict_map = self._get_conflict_map()
 
         for core in cores:
+            core_flags = _core_flags(core)
             if only_matching_vlnv:
                 if not any(
                     [eq_vln(core.name, top_core)]
                     + [
                         eq_vln(virtual_vlnv, top_core)
-                        for virtual_vlnv in core.get_virtuals(_flags)
+                        for virtual_vlnv in core.get_virtuals(core_flags)
                     ]
                 ):
                     continue
@@ -309,7 +309,7 @@ class CoreDB:
                 core.name.revision,
             )
 
-            _virtuals = core.get_virtuals(_flags)
+            _virtuals = core.get_virtuals(core_flags)
             if _virtuals:
                 _s = "; provides ( {} )"
                 package_str += _s.format(self._parse_virtual(_virtuals))
@@ -321,9 +321,9 @@ class CoreDB:
             # Add dependencies only if we want to build the whole dependency
             # tree.
             if not only_matching_vlnv:
-                _flags["is_toplevel"] = core.name == top_core
+                _depends = []
                 try:
-                    _depends = core.get_depends(_flags)
+                    _depends = core.get_depends(core_flags)
                 except SyntaxError as e:
                     logger.warning(
                         f"Ignoring {core.name} due to syntax error in dependencies: {e.msg}"
@@ -370,7 +370,7 @@ class CoreDB:
         if len(transaction.operations) > 1:
             for op in transaction.operations:
                 package_name = self._package_name(op.package.core.name)
-                virtuals = op.package.core.get_virtuals(_flags)
+                virtuals = op.package.core.get_virtuals(_core_flags(op.package.core))
                 for p in op.package.provides:
                     for virtual in virtuals:
                         if p[0] == self._package_name(virtual):
