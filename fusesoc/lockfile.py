@@ -7,7 +7,8 @@ import pathlib
 import fastjsonschema
 
 import fusesoc.utils
-from fusesoc.version import version
+from fusesoc import __version__
+from fusesoc.exceptions import CoreParseError, LockfileError
 from fusesoc.vlnv import Vlnv
 
 logger = logging.getLogger(__name__)
@@ -55,16 +56,19 @@ class LockFileMode(int, enum.Enum):
 
 def load_lockfile(filepath: pathlib.Path):
     try:
-        lockfile_data = fusesoc.utils.yaml_fread(filepath)
+        try:
+            lockfile_data = fusesoc.utils.yaml_fread(filepath)
+        except CoreParseError as e:
+            raise LockfileError(str(e))
         try:
             validator = fastjsonschema.compile(
                 json.loads(lockfile_schema), detailed_exceptions=False
             )
             validator(lockfile_data)
         except fastjsonschema.JsonSchemaDefinitionException as e:
-            raise SyntaxError(f"Error parsing JSON Schema: {e}")
+            raise LockfileError(f"Error parsing JSON Schema: {e}")
         except fastjsonschema.JsonSchemaException as e:
-            raise SyntaxError(f"Error validating {e}")
+            raise LockfileError(f"Error validating {e}")
     except FileNotFoundError:
         logger.warning(f"Lockfile {filepath} not found")
         return {}
@@ -76,10 +80,10 @@ def load_lockfile(filepath: pathlib.Path):
             vlnv = Vlnv(core["name"])
             vln = vlnv.vln_str()
             if vln in map(Vlnv.vln_str, cores.keys()):
-                raise SyntaxError(f"Core {vln} defined multiple times in lock file")
+                raise LockfileError(f"Core {vln} defined multiple times in lock file")
             core["name"] = vlnv
         else:
-            raise SyntaxError("Core definition without a name")
+            raise LockfileError("Core definition without a name")
         cores[vlnv] = core
     lockfile = {
         "cores": cores,
@@ -117,7 +121,7 @@ class LockFile:
             core["name"] = str(core["name"])
         lockfile = {
             "lockfile_version": 1,
-            "fusesoc_version": version,
+            "fusesoc_version": __version__,
             "cores": cores,
         }
         fusesoc.utils.yaml_fwrite(self._filepath, lockfile)

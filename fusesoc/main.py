@@ -5,85 +5,58 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 import argparse
+import logging
 import os
 import pathlib
 import shutil
 import signal
 import sys
-import warnings
-from pathlib import Path
+import threading
 
 import argcomplete
 
-from fusesoc import signature
-
-try:
-    from fusesoc.version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-import logging
-
+from fusesoc import Flags, __version__, signature
 from fusesoc.config import Config
-from fusesoc.coremanager import DependencyError
-from fusesoc.fusesoc import Fusesoc
+from fusesoc.exceptions import (
+    AmbiguousCoreError,
+    BackendError,
+    CoreNotFoundError,
+    FusesocError,
+    LibraryError,
+    LibraryExistsError,
+)
+from fusesoc.fusesoc import Fusesoc, resolve_stages
 from fusesoc.librarymanager import Library
 
 logger = logging.getLogger(__name__)
 
 
-def _effective_config_path(args_config):
-    """Return the config path to use, with CLI taking precedence over env var."""
-    if args_config:
-        return args_config
-    return os.environ.get("FUSESOC_CONFIG")
-
-
-def _get_core(cm, core_name):
-    matches = set()
-    if ":" not in core_name:
-        for core in cm.get_cores():
-            (vendor, library, name, _) = core.split(":")
-            if name.lower() == core_name.lower():
-                matches.add(f"{vendor}:{library}:{name}")
-        if len(matches) == 1:
-            core_name = matches.pop()
-        elif len(matches) > 1:
-            _s = f"'{core_name}' is ambiguous. Potential matches: "
-            _s += ", ".join(f"'{x}'" for x in matches)
-            logger.error(_s)
-            exit(1)
-
-    core = None
+def _get_core(fs, core_name):
     try:
-        core = cm.get_core(core_name)
-    except RuntimeError as e:
-        logger.error(str(e))
-        exit(1)
-    except DependencyError as e:
-        msg = (
-            f"{core_name!r} or any of its dependencies requires {e.value!r}, but "
-            "this core was not found"
-        )
+        return fs.resolve_core(core_name)
+    except CoreNotFoundError as e:
+        msg = e.msg
         # If any core file failed to parse during library scanning, the missing
         # core may simply be one that was silently ignored. Surface those errors
         # alongside the "not found" message so they don't get lost in the log
         # scrollback.
-        if getattr(cm, "parse_errors", None):
+        if e.parse_errors:
             msg += (
                 "\n\n"
                 "The following core files failed to parse and were ignored "
                 "during the library scan; one of them may define the missing "
                 "core:"
             )
-            for core_file, err in cm.parse_errors:
+            for core_file, err in e.parse_errors:
                 msg += f"\n  - {core_file}: {err}"
         logger.error(msg)
         exit(1)
-    except SyntaxError as e:
+    except AmbiguousCoreError as e:
         logger.error(str(e))
         exit(1)
-    return core
+    except (RuntimeError, SyntaxError) as e:
+        logger.error(str(e))
+        exit(1)
 
 
 def abort_handler(signal, frame):
@@ -93,16 +66,6 @@ def abort_handler(signal, frame):
     logger.info("****************************")
     print("")
     sys.exit(0)
-
-
-signal.signal(signal.SIGINT, abort_handler)
-
-
-def pgm(fs, args):
-    warnings.warn(
-        "The 'pgm' subcommand has been removed. "
-        "Use 'fusesoc run --target=synth --run' instead."
-    )
 
 
 def fetch(fs, args):
@@ -122,58 +85,36 @@ def list_paths(fs, args):
 
 def add_library(fs, args):
     sync_uri = vars(args)["sync-uri"]
+    is_global = vars(args).get("global", False)
 
-    name = args.name or os.path.basename(sync_uri.rstrip("/"))
-
-    # Check where to store the library
-    if args.location:
-        location = args.location
-    elif vars(args).get("global", False):
-        location = os.path.join(fs.config.library_root, name)
-    else:
-        location = os.path.join("fusesoc_libraries", name)
-
-    sync_type = vars(args).get("sync-type")
-    sync_version = vars(args).get("sync-version")
-
-    # Check if it's a dir. Otherwise fall back to git repo
-    if not sync_type:
-        if os.path.isdir(sync_uri):
-            sync_type = "local"
-        else:
-            sync_type = "git"
-
-    if sync_type == "local":
-        logger.info(
-            "Interpreting sync-uri '{}' as location for local provider.".format(
-                sync_uri
-            )
-        )
-        location = os.path.abspath(sync_uri)
-
-    auto_sync = not args.no_auto_sync
-    library = Library(
-        name,
-        location,
-        sync_type,
+    library = Library.from_uri(
         sync_uri,
-        sync_version,
-        auto_sync,
-        args.sync_submodules,
+        name=args.name,
+        location=args.location,
+        sync_type=vars(args).get("sync-type"),
+        sync_version=vars(args).get("sync-version"),
+        auto_sync=not args.no_auto_sync,
+        sync_submodules=args.sync_submodules,
+        default_root=(
+            os.path.join(fs.config.library_root) if is_global else "fusesoc_libraries"
+        ),
     )
 
-    effective_config = _effective_config_path(args.config)
+    effective_config = Config.resolve_path(args.config)
     if effective_config:
-        config = Config(effective_config)
+        config = Config(effective_config, create_if_missing=True)
     elif vars(args)["global"]:
-        xdg_config_home = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
-        config_file = os.path.join(xdg_config_home, "fusesoc", "fusesoc.conf")
-        config = Config(config_file)
+        config = Config(Config.global_config_path(), create_if_missing=True)
     else:
-        config = Config("fusesoc.conf")
+        config = Config("fusesoc.conf", create_if_missing=True)
 
     try:
         config.add_library(library)
+    except LibraryExistsError as e:
+        logger.warning(str(e))
+    except LibraryError as e:
+        logger.error(str(e))
+        exit(1)
     except RuntimeError as e:
         logger.error("`add library` failed: " + str(e))
         exit(1)
@@ -212,13 +153,13 @@ def library_list(fs, args):
 
 def list_cores(fs, args):
     cores = fs.get_cores()
-    trustfile = fs.config.ssh_trustfile or args.ssh_trustfile
+    trustfile = args.ssh_trustfile or fs.config.ssh_trustfile
     if not trustfile:
-        logger.warn(
+        logger.warning(
             "No trustfile configured (ssh-trustfile in fusesoc.conf), signatures will not be checked."
         )
     elif not os.path.isfile(trustfile):
-        logger.warn(
+        logger.warning(
             "The trustfile configured in fusesoc.conf does not exist, signatures will not be checked."
         )
     print("\nAvailable cores:\n")
@@ -246,19 +187,11 @@ def list_cores(fs, args):
 
 
 def list_tools(fs, args):
-    from edalize.edatool import get_edatool, walk_tool_packages
+    tools = Fusesoc.get_tools()
+    maxlen = max(map(len, tools))
 
-    _tp = list(walk_tool_packages())
-    maxlen = max(map(len, _tp))
-
-    for tool_name in _tp:
-        try:
-            tool_class = get_edatool(tool_name)
-            desc = tool_class.get_doc(0)["description"]
-            print(f"{tool_name:{maxlen}} : {desc}")
-        # Ignore any misbehaving backends
-        except Exception:
-            pass
+    for tool_name, desc in tools.items():
+        print(f"{tool_name:{maxlen}} : {desc}")
 
 
 def gen_list(fs, args):
@@ -304,7 +237,7 @@ Usage       :
 
 def core_info(fs, args):
     core = _get_core(fs, args.core)
-    trustfile = fs.config.ssh_trustfile or args.ssh_trustfile
+    trustfile = args.ssh_trustfile or fs.config.ssh_trustfile
     print(core.info(trustfile))
 
 
@@ -328,44 +261,25 @@ def gen_clean(fs, args):
 
 
 def run(fs, args):
-    stages = (args.setup, args.build, args.run)
-
-    # Always run setup if build is true
-    args.setup |= args.build
-
-    # Run all stages by default if no stage flags are set
-    if stages == (False, False, False):
-        do_configure = True
-        do_build = True
-        do_run = True
-    elif stages == (True, False, True):
-        logger.error("Configure and run without build is invalid")
+    # Validate the stage combination before anything else, like the CLI
+    # has always done (even a nonexistent core name reports this first).
+    try:
+        resolve_stages(args.setup, args.build, args.run)
+    except FusesocError as e:
+        logger.error(str(e))
         exit(1)
-    else:
-        do_configure = args.setup
-        do_build = args.build
-        do_run = args.run
 
-    flags = {"target": args.target or "default"}
-    if args.tool:
-        flags["tool"] = args.tool
-    for flag in args.flag:
-        if flag[0] == "+":
-            flags[flag[1:]] = True
-        elif flag[0] == "-":
-            flags[flag[1:]] = False
-        else:
-            flags[flag] = True
+    flags = Flags.from_cli_strings(args.flag, target=args.target, tool=args.tool)
 
     try:
-        fs.cm.db.mapping_set(args.mapping)
+        fs.set_mappings(args.mapping)
     except RuntimeError as e:
-        logger.error(e)
+        logger.error(str(e))
         exit(1)
 
     if args.lockfile is not None:
         try:
-            fs.cm.db.load_lockfile(args.lockfile)
+            fs.load_lockfile(args.lockfile)
         except SyntaxError as e:
             logger.error(f"Failed to load lock file, {str(e)}")
             exit(1)
@@ -373,7 +287,27 @@ def run(fs, args):
     core = _get_core(fs, args.system)
 
     try:
-        flags = dict(core.get_flags(flags["target"]), **flags)
+        fs.run(
+            core,
+            flags,
+            setup=args.setup,
+            build=args.build,
+            run=args.run,
+            clean=args.clean,
+            backendargs=args.backendargs,
+        )
+    except BackendError as e:
+        if e.stage == "configure":
+            logger.error("Failed to configure the system")
+            logger.error(e.msg)
+        elif e.stage == "build":
+            logger.error(f"Failed to build {str(core.name)} : {e.msg}")
+        else:
+            logger.error(f"Failed to run {str(core.name)} : {e.msg}")
+        exit(1)
+    except FileNotFoundError as e:
+        logger.error(f'Could not find EDA API file "{e.filename}"')
+        exit(1)
     except SyntaxError as e:
         logger.error(str(e))
         exit(1)
@@ -381,126 +315,54 @@ def run(fs, args):
         logger.error(str(e))
         exit(1)
 
-    # Unconditionally clean out the work root on fresh builds
-    # if we use the old tool API or clean flag is set
-    if do_configure and (not core.get_flow(flags) or args.clean):
-        try:
-            prepare_work_root(fs.get_work_root(core, flags))
-        except RuntimeError as e:
-            logger.error(e)
-            exit(1)
-
-    # Frontend/backend separation
-
-    try:
-        edam_file, backend = fs.get_backend(core, flags, args.backendargs)
-
-    except RuntimeError as e:
-        logger.error(str(e))
-        exit(1)
-    except FileNotFoundError as e:
-        logger.error(f'Could not find EDA API file "{e.filename}"')
-        exit(1)
-
-    makefile = os.path.join(backend.work_root, "Makefile")
-    do_configure = not os.path.exists(makefile) or (
-        os.path.getmtime(makefile) < os.path.getmtime(edam_file)
-    )
-
-    if do_configure:
-        try:
-            backend.configure()
-        except RuntimeError as e:
-            logger.error("Failed to configure the system")
-            logger.error(str(e))
-            exit(1)
-
-    if do_build:
-        try:
-            backend.build()
-        except RuntimeError as e:
-            logger.error(f"Failed to build {str(core.name)} : {str(e)}")
-            exit(1)
-
-    if do_run:
-        try:
-            backend.run()
-        except RuntimeError as e:
-            logger.error(f"Failed to run {str(core.name)} : {str(e)}")
-            exit(1)
-
 
 def config(fs, args):
-    conf = Config(path=_effective_config_path(args.config), create_if_missing=False)
+    conf = Config(path=Config.resolve_path(args.config))
 
-    if not hasattr(conf, args.key):
+    # Only actual config options are valid keys, not arbitrary attributes
+    prop = getattr(type(conf), args.key, None)
+    if not isinstance(prop, property):
         logger.error(f"Invalid config parameter: {args.key}")
         exit(1)
 
     if not args.value:
         # Read
-        if hasattr(conf, args.key):
-            print(getattr(conf, args.key))
+        print(getattr(conf, args.key))
     else:
         # Write
-        if hasattr(conf, args.key):
-            setattr(conf, args.key, args.value)
-            conf.write()
-
-
-# Clean out old work root
-def prepare_work_root(work_root):
-    if os.path.exists(work_root):
-        for f in os.listdir(work_root):
-            if os.path.isdir(os.path.join(work_root, f)):
-                shutil.rmtree(os.path.join(work_root, f))
-            else:
-                os.remove(os.path.join(work_root, f))
-    else:
-        os.makedirs(work_root)
+        if prop.fset is None:
+            logger.error(f"Config parameter '{args.key}' cannot be set")
+            exit(1)
+        setattr(conf, args.key, args.value)
+        conf.write()
 
 
 def update(fs, args):
     fs.update_libraries(args.libraries)
 
 
+def _completer_fusesoc(parsed_args):
+    """Bootstrap a Fusesoc instance for argcomplete completers."""
+    config = Config(
+        Config.resolve_path(parsed_args.config),
+        overrides=args_to_overrides(parsed_args),
+    )
+    return Fusesoc(config)
+
+
 class CoreCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(
-            _effective_config_path(parsed_args.config), create_if_missing=False
-        )
-        args_to_config(parsed_args, config)
-        fs = Fusesoc(config)
-        cores = fs.get_cores()
-        return cores
+        return _completer_fusesoc(parsed_args).get_cores()
 
 
 class ToolCompleter:
     def __call__(self, parsed_args, **kwargs):
-        from edalize.edatool import get_edatool, walk_tool_packages
-
-        _tp = list(walk_tool_packages())
-        tools = []
-        for tool_name in _tp:
-            try:
-                tool_class = get_edatool(tool_name)
-                if tool_class.get_doc(0)["description"]:
-                    tools += [tool_name]
-            # Ignore any misbehaving backends
-            except Exception:
-                pass
-        return tools
+        return [name for name, desc in Fusesoc.get_tools().items() if desc]
 
 
 class GenCompleter:
     def __call__(self, parsed_args, **kwargs):
-        config = Config(
-            _effective_config_path(parsed_args.config), create_if_missing=False
-        )
-        args_to_config(parsed_args, config)
-        fs = Fusesoc(config)
-        cores = fs.get_generators()
-        return cores
+        return _completer_fusesoc(parsed_args).get_generators()
 
 
 def get_parser():
@@ -794,59 +656,60 @@ def parse_args(argv):
         return None
 
 
-def args_to_config(args, config):
-    if hasattr(args, "resolve_env_vars_early") and args.resolve_env_vars_early:
-        setattr(config, "args_resolve_env_vars_early", args.resolve_env_vars_early)
+def args_to_overrides(args):
+    """Collect config overrides from parsed CLI arguments."""
+    overrides = {}
 
-    if (
-        hasattr(args, "allow_additional_properties")
-        and args.allow_additional_properties
+    for name in (
+        "resolve_env_vars_early",
+        "allow_additional_properties",
+        "no_export",
     ):
-        setattr(
-            config, "args_allow_additional_properties", args.allow_additional_properties
-        )
+        if getattr(args, name, False):
+            overrides[name] = True
 
-    if args.verbose:
-        setattr(config, "args_verbose", args.verbose)
+    for name in ("build_root", "work_root", "system_name"):
+        if getattr(args, name, None):
+            overrides[name] = getattr(args, name)
 
-    if hasattr(args, "no_export") and args.no_export:
-        setattr(config, "args_no_export", args.no_export)
+    if getattr(args, "cores_root", None):
+        overrides["cores_root"] = args.cores_root
 
-    if hasattr(args, "build_root") and args.build_root and len(args.build_root) > 0:
-        setattr(config, "args_build_root", args.build_root)
+    if getattr(args, "filter", None):
+        overrides["filters"] = args.filter
 
-    if hasattr(args, "work_root") and args.work_root and len(args.work_root) > 0:
-        setattr(config, "args_work_root", args.work_root)
-
-    if hasattr(args, "cores_root") and args.cores_root and len(args.cores_root) > 0:
-        setattr(config, "args_cores_root", args.cores_root)
-
-    if hasattr(args, "system_name") and args.system_name and len(args.system_name) > 0:
-        setattr(config, "args_system_name", args.system_name)
-
-    if hasattr(args, "filter"):
-        config.args_filters = args.filter
+    return overrides
 
 
 def fusesoc(args):
     Fusesoc.init_logging(args.verbose, args.monochrome, args.log_file)
 
-    config = Config(_effective_config_path(args.config), create_if_missing=False)
-    args_to_config(args, config)
-    fs = Fusesoc(config)
+    config = Config(Config.resolve_path(args.config), overrides=args_to_overrides(args))
+    fs = Fusesoc(config, verbose=args.verbose)
 
-    # Run the function
-    args.func(fs, args)
+    # Run the function. Errors raised by the library are reported here;
+    # subcommands only handle errors where they can add context.
+    try:
+        args.func(fs, args)
+    except FusesocError as e:
+        logger.error(str(e))
+        exit(1)
 
 
 def main():
+    # Signal handlers can only be registered in the main thread; embedders
+    # calling main() from a worker thread keep their own SIGINT handling.
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, abort_handler)
+
     args = parse_args(sys.argv[1:])
     if not args:
-        exit(0)
+        return 0
 
     logger.debug("Command line arguments: " + str(sys.argv))
 
     fusesoc(args)
+    return 0
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ dependencies = [
   "pyyaml>=6.0",
   "pydantic>=2.13.3",
   "simplesat>=0.9.1",
+  "okonomiyaki",
   "fastjsonschema",
   "argcomplete",
 ]
@@ -51,9 +52,11 @@ include = [
   "fusesoc.capi2",
   "fusesoc.capi2.schema",
   "fusesoc.provider",
-  "fusesoc.parser",
   "fusesoc.filters",
 ]
+
+[tool.setuptools.package-data]
+fusesoc = ["py.typed"]
 
 [project.scripts]
 fusesoc = "fusesoc.main:main"
@@ -83,7 +86,7 @@ target-version = "py310"
 mypy_path = "."
 namespace_packages = true
 explicit_package_bases = true
-files = ["fusesoc/capi2/"]
+files = ["fusesoc/__init__.py", "fusesoc/exceptions.py", "fusesoc/library.py", "fusesoc/capi2/"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -103,8 +106,10 @@ module = [
   "fusesoc.signature",
   "fusesoc.vlnv",
   "fusesoc.provider.*",
-  "fusesoc.parser.*",
   "fusesoc.coremanager",
+  "fusesoc.edalizer",
+  "fusesoc.lockfile",
+  "fusesoc.main",
   "fusesoc.config",
   "fusesoc.librarymanager",
   "fusesoc.fusesoc",

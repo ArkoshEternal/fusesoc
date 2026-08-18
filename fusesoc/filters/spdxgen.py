@@ -6,12 +6,15 @@
 import datetime
 import hashlib
 import json
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 try:
     import nanoid
 except ImportError:
-    print(
+    logger.warning(
         "Filter spdxgen needs the nanoid python package, please install it and try again."
     )
 
@@ -185,11 +188,3 @@ class Spdxgen:
             context = "https://spdx.github.io/spdx-spec/v3.0.1/rdf/spdx-context.jsonld"
             f.write(json.dumps({"@context": context, "@graph": graph}))
         return edam
-
-
-def main():
-    print("foo")
-
-
-if __name__ == "__main__":
-    main()

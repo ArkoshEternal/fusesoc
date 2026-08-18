@@ -774,3 +774,212 @@ def test_find_cores_records_parse_errors(tmp_path):
     bad_file, msg = cm.parse_errors[0]
     assert bad_file.endswith("broken.core")
     assert "must be array" in msg
+
+
+def test_load_lockfile_invalidates_solver_cache(tmp_path):
+    """Loading a lock file invalidates the solver cache, so a subsequent
+    solve honors the pinned versions.
+    """
+    from fusesoc.config import Config
+    from fusesoc.coremanager import CoreManager
+    from fusesoc.librarymanager import Library
+    from fusesoc.vlnv import Vlnv
+
+    core_dir = tmp_path / "cores"
+    core_dir.mkdir()
+    (core_dir / "top.core").write_text(
+        "CAPI=2:\n"
+        "name: ::lockstale-top\n"
+        "filesets:\n"
+        "  fs1:\n"
+        "    depend:\n"
+        '      - ">=::used:1.0"\n'
+        "targets:\n"
+        "  default:\n"
+        "    filesets:\n"
+        "      - fs1\n"
+    )
+    (core_dir / "used-1.0.core").write_text(
+        "CAPI=2:\nname: ::used:1.0\ntargets:\n  default: {}\n"
+    )
+    (core_dir / "used-1.1.core").write_text(
+        "CAPI=2:\nname: ::used:1.1\ntargets:\n  default: {}\n"
+    )
+    lockfile = tmp_path / "pin-1.0.lock.yml"
+    lockfile.write_text(
+        "cores:\n" '  - name: "::used:1.0"\n' '  - name: "::lockstale-top:0"\n'
+    )
+
+    # A Config with an explicit path keeps the test hermetic: Config() with
+    # path=None would read ~/.config and /etc and mkdir the user's cache dir.
+    config_file = tmp_path / "fusesoc.conf"
+    config_file.write_text(f"[main]\ncache_root = {tmp_path / 'cache'}\n")
+
+    cm = CoreManager(Config(str(config_file)))
+    cm.add_library(Library("lockstale", str(core_dir)), [])
+
+    # Without a lock file the highest version of ::used is selected.
+    deps_before = cm.get_depends(Vlnv("::lockstale-top"), {})
+    assert {str(c) for c in deps_before} == {"::used:1.1", "::lockstale-top:0"}
+
+    cm.db.load_lockfile(lockfile, True)
+
+    # The lock file pins ::used:1.0 and takes effect immediately.
+    deps_after = cm.get_depends(Vlnv("::lockstale-top"), {})
+    assert {str(c) for c in deps_after} == {"::used:1.0", "::lockstale-top:0"}
+
+
+def test_mapping_set_invalidates_solver_cache(tmp_path):
+    """Applying a mapping invalidates the solver cache, so a subsequent solve
+    honors the mapping.
+    """
+    from pathlib import Path
+
+    from fusesoc.config import Config
+    from fusesoc.coremanager import CoreManager
+    from fusesoc.librarymanager import Library
+    from fusesoc.vlnv import Vlnv
+
+    core_dir = Path(__file__).parent / "capi2_cores" / "mapping"
+    top_vlnv = Vlnv("test_mapping:t:top")
+
+    # A Config with an explicit path keeps the test hermetic: Config() with
+    # path=None would read ~/.config and /etc and mkdir the user's cache dir.
+    config_file = tmp_path / "fusesoc.conf"
+    config_file.write_text(f"[main]\ncache_root = {tmp_path / 'cache'}\n")
+
+    cm = CoreManager(Config(str(config_file)))
+    cm.add_library(Library("mapping_test", core_dir), [])
+
+    unmapped_deps = {
+        "test_mapping:t:top:0",
+        "test_mapping:l:a:0",
+        "test_mapping:l:b:0",
+        "test_mapping:l:c:0",
+    }
+
+    deps_before = cm.get_depends(top_vlnv, {})
+    assert {str(c) for c in deps_before} == unmapped_deps
+
+    # The mapping of test_mapping:l:d replaces b->d and c->e and takes
+    # effect immediately.
+    cm.db.mapping_set(["test_mapping:l:d"])
+    deps_after = cm.get_depends(top_vlnv, {})
+    assert {str(c) for c in deps_after} == {
+        "test_mapping:t:top:0",
+        "test_mapping:l:a:0",
+        "test_mapping:l:d:0",
+        "test_mapping:l:e:0",
+    }
+
+
+def test_solve_is_toplevel_not_leaked_between_cores(tmp_path):
+    """CoreDB._solve evaluates each core's expressions with its own
+    is_toplevel value; the flag no longer leaks between loop iterations, so
+    the outcome does not depend on core registration order.
+    """
+    from fusesoc.capi2.coreparser import Core2Parser
+    from fusesoc.core import Core
+    from fusesoc.coremanager import CoreDB, DependencyError
+    from fusesoc.vlnv import Vlnv
+
+    (tmp_path / "top.core").write_text(
+        "CAPI=2:\n"
+        "name: ::top:0\n"
+        "filesets:\n"
+        "  fs1:\n"
+        "    depend:\n"
+        '      - "::virt-iface"\n'
+        "targets:\n"
+        "  default:\n"
+        "    filesets:\n"
+        "      - fs1\n"
+    )
+    (tmp_path / "impl.core").write_text(
+        "CAPI=2:\n"
+        "name: ::impl:0\n"
+        "virtual:\n"
+        '  - "is_toplevel? (::virt-iface)"\n'
+    )
+
+    parser = Core2Parser()
+    top = Core(parser=parser, core_file=str(tmp_path / "top.core"))
+    impl = Core(parser=parser, core_file=str(tmp_path / "impl.core"))
+
+    # The conditional virtual only fires when is_toplevel is set...
+    assert [str(v) for v in impl.get_virtuals({})] == []
+    assert [str(v) for v in impl.get_virtuals({"is_toplevel": True})] == [
+        "::virt-iface:0"
+    ]
+
+    # ...and ::impl is never the toplevel, so it never provides ::virt-iface
+    # during dependency resolution, regardless of registration order.
+    db = CoreDB()
+    db.add(top, None)
+    db.add(impl, None)
+    with pytest.raises(DependencyError):
+        db.solve(Vlnv("::top"), {})
+
+    db_reversed = CoreDB()
+    db_reversed.add(impl, None)
+    db_reversed.add(top, None)
+    with pytest.raises(DependencyError):
+        db_reversed.solve(Vlnv("::top"), {})
+
+
+def test_dependency_error_str_includes_msg():
+    """DependencyError stringification includes both the failing value and,
+    when given, the explanatory msg."""
+    from fusesoc.coremanager import DependencyError
+
+    e = DependencyError("foo", msg="bar")
+    assert str(e) == "'foo': bar"
+    assert e.value == "foo"
+    assert e.msg == "bar"
+    assert str(DependencyError("foo")) == "'foo'"
+
+
+def test_get_core_does_not_mutate_stored_core(tmp_path):
+    """CoreManager.get_core pins the returned core's version relation to '=='
+    without mutating the object stored in the CoreDB.
+    """
+    import os
+
+    from fusesoc.config import Config
+    from fusesoc.coremanager import CoreManager
+    from fusesoc.librarymanager import Library
+    from fusesoc.vlnv import Vlnv
+
+    core_dir = os.path.join(os.path.dirname(__file__), "capi2_cores", "dependencies")
+
+    # A Config with an explicit path keeps the test hermetic: Config() with
+    # path=None would read ~/.config and /etc and mkdir the user's cache dir.
+    config_file = tmp_path / "fusesoc.conf"
+    config_file.write_text(f"[main]\ncache_root = {tmp_path / 'cache'}\n")
+
+    cm = CoreManager(Config(str(config_file)))
+    cm.add_library(Library("deps", core_dir), [])
+
+    stored = cm.db._cores["::dependencies-top:0"]["core"]
+    # The core file declares a versionless name, parsed with relation '>='.
+    assert stored.name.relation == ">="
+
+    returned = cm.get_core(Vlnv("::dependencies-top"))
+
+    assert returned is not stored
+    assert returned.name.relation == "=="
+    assert stored.name.relation == ">="
+
+
+def test_solver_cache_lookup_miss_returns_sentinel():
+    """CoreDB._solver_cache_lookup signals a cache miss with a dedicated
+    sentinel, so a cached falsy value is not mistaken for a miss.
+    """
+    from fusesoc.coremanager import _CACHE_MISS, CoreDB
+
+    db = CoreDB()
+    assert db._solver_cache_lookup(("no", "such", "key")) is _CACHE_MISS
+
+    # A stored value is returned as-is on a hit.
+    db._solver_cache_store(("some", "key"), ["value"])
+    assert db._solver_cache_lookup(("some", "key")) == ["value"]

@@ -18,6 +18,7 @@ except ImportError:
     from yaml import SafeLoader as YamlLoader
 
 from fusesoc.capi2.inheritance import Inheritance
+from fusesoc.exceptions import CoreParseError
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ def yaml_read(data, resolve_env_vars=False):
             capi_data = yaml.load(data, Loader=YamlLoader)
         return Inheritance.elaborate_inheritance(capi_data)
     except (yaml.parser.ParserError, yaml.scanner.ScannerError) as e:
-        raise SyntaxError(str(e))
+        raise CoreParseError(str(e))
 
 
 def yaml_dump(data):

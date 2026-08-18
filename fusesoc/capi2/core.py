@@ -15,11 +15,12 @@ from typing import Any, Literal, Mapping, Sequence
 
 from fusesoc import signature, utils
 from fusesoc.capi2.core_handle import CoreHandle
+from fusesoc.exceptions import CoreParseError, FlagError
 from fusesoc.provider.provider import get_provider
 from fusesoc.vlnv import Vlnv
 
 from .coreparser import Core2Parser
-from .flags import Flags, get_target_name, into_flag_defs
+from .flags import FlagsLike, derive, get_target_name, into_flag_defs
 from .schema.common import License
 from .schema.core import Core
 from .schema.target import Target
@@ -61,11 +62,11 @@ class CoreInterface:
     def core_root(self) -> str:
         return os.path.dirname(self.core_file)
 
-    def get_data(self, flags: Flags) -> Core[str]:
+    def get_data(self, flags: FlagsLike) -> Core[str]:
         defs = into_flag_defs(flags)
         return self.handle.get(defs)
 
-    def get_target(self, flags: Flags) -> Target[str] | None:
+    def get_target(self, flags: FlagsLike) -> Target[str] | None:
         name = get_target_name(flags)
         return self.get_data(flags).targets.get(name)
 
@@ -78,7 +79,7 @@ class CoreInterface:
         else:
             return "local"
 
-    def export(self, dst_dir, flags={}):
+    def export(self, dst_dir, flags: FlagsLike = MappingProxyType({})):
         src_files: list[str] = [f["name"] for f in self.get_files(flags)]
 
         for k, v in self._get_vpi(flags).items():
@@ -132,7 +133,7 @@ class CoreInterface:
                         shutil.copytree(src, dst, dirs_exist_ok=True)
 
         # Clean out leftover files from previous builds
-        for root, dirs, files in os.walk(dst_dir):  # ty: ignore[invalid-assignment]
+        for root, _subdirs, files in os.walk(dst_dir):
             for f in files:
                 _abs_f = os.path.join(root, f)
                 _rel_f = os.path.normpath(os.path.relpath(_abs_f, dst_dir))
@@ -141,7 +142,7 @@ class CoreInterface:
                     os.remove(_abs_f)
 
     def _get_script_names(
-        self, flags: Flags
+        self, flags: FlagsLike
     ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
         target = self.get_target(flags)
 
@@ -154,7 +155,7 @@ class CoreInterface:
                     for script in scripts:
                         cd_script = cd_scripts.get(script)
                         if cd_script is None:
-                            raise SyntaxError(
+                            raise CoreParseError(
                                 "Script '{}', requested by target '{}', was not found".format(
                                     script, get_target_name(flags)
                                 )
@@ -164,7 +165,7 @@ class CoreInterface:
 
         return hooks
 
-    def get_flags(self, target_name: str) -> Flags:
+    def get_flags(self, target_name: str) -> FlagsLike:
         """Get flags, including tool, from target"""
 
         target = self.get_data({}).targets.get(target_name)
@@ -177,17 +178,17 @@ class CoreInterface:
 
         return flags
 
-    def get_filters(self, flags: Flags) -> list[str]:
+    def get_filters(self, flags: FlagsLike) -> list[str]:
         return list(target.filters) if (target := self.get_target(flags)) else []
 
     def get_flow(self, flags):
+        flags = derive(flags)
         self._debug(f"Getting flow for flags {str(flags)}")
         flow = None
-        if flags.get("flow"):
-            flow = flags["flow"]
+        if flags.flow:
+            flow = flags.flow
         else:
-            _flags = flags.copy()
-            _flags["is_toplevel"] = True
+            _flags = flags.replace(is_toplevel=True)
             target_name, target = self._get_target(_flags)
             if "flow" in target:
                 flow = str(target["flow"])
@@ -217,12 +218,13 @@ class CoreInterface:
         return hooks
 
     def get_tool_options(self, flags):
-        _flags = flags.copy()
+        flags = derive(flags)
+        self._debug(f"Getting tool options for flags {str(flags)}")
 
-        self._debug(f"Getting tool options for flags {str(_flags)}")
-
-        target_name, target = self._get_target(_flags)
-        tool = flags["tool"]
+        target_name, target = self._get_target(flags)
+        if not flags.tool:
+            raise FlagError(f"Cannot get tool options for '{self.name}': no tool set")
+        tool = flags.tool
         options = (
             target["tools"][tool]
             if "tools" in target and tool in target["tools"]
@@ -237,10 +239,8 @@ class CoreInterface:
         return options
 
     def get_flow_options(self, flags):
-        _flags = flags.copy()
-
-        self._debug(f"Getting flow options for flags {str(_flags)}")
-        target_name, target = self._get_target(_flags)
+        self._debug(f"Getting flow options for flags {str(flags)}")
+        target_name, target = self._get_target(flags)
 
         if "flow_options" in target:
             self._debug("Found flow options " + str(target["flow_options"]))
@@ -280,18 +280,24 @@ class CoreInterface:
                 _src_files.append(attributes)
         return _src_files
 
-    def get_generators(self, flags: Flags = {}) -> Mapping[str, Any]:
+    def get_generators(
+        self, flags: FlagsLike = MappingProxyType({})
+    ) -> Mapping[str, Any]:
         generators = self.get_data(flags).generators
         return {
             name: generator.model_dump(exclude_unset=True) | {"root": self.files_root}
             for name, generator in generators.items()
         }
 
-    def get_virtuals(self, flags: Flags = {}) -> list[Vlnv]:
+    def get_virtuals(self, flags: FlagsLike = MappingProxyType({})) -> list[Vlnv]:
         """Get a list of "virtual" VLNVs provided by this core."""
         return [Vlnv(name) for name in self.get_data(flags).virtual]
 
-    def get_parameters(self, flags: Flags = {}, ext_parameters={}):
+    def get_parameters(
+        self,
+        flags: FlagsLike = MappingProxyType({}),
+        ext_parameters=MappingProxyType({}),
+    ):
         def _parse_param_value(name, datatype, default):
             if datatype == "bool":
                 if isinstance(default, str):
@@ -301,7 +307,7 @@ class CoreInterface:
                         return False
                     else:
                         _s = "{}: Invalid default value '{}' for bool parameter {}"
-                        raise SyntaxError(_s.format(self.name, default, p))
+                        raise CoreParseError(_s.format(self.name, default, p))
                 return default
             elif datatype == "int":
                 if isinstance(default, int):
@@ -326,7 +332,7 @@ class CoreInterface:
 
             if datatype not in ["bool", "file", "int", "real", "str"]:
                 _s = "{} : Invalid datatype '{}' for parameter {}"
-                raise SyntaxError(_s.format(self.name, datatype, p))
+                raise CoreParseError(_s.format(self.name, datatype, p))
 
             if paramtype not in [
                 "cmdlinearg",
@@ -336,7 +342,7 @@ class CoreInterface:
                 "vlogparam",
             ]:
                 _s = "{} : Invalid paramtype '{}' for parameter {}"
-                raise SyntaxError(_s.format(self.name, paramtype, p))
+                raise CoreParseError(_s.format(self.name, paramtype, p))
             parsed_param = {
                 "datatype": str(core_param["datatype"]),
                 "paramtype": paramtype,
@@ -379,7 +385,7 @@ class CoreInterface:
                     parameters[p] = ext_parameters[p]
 
                 else:
-                    raise SyntaxError(
+                    raise CoreParseError(
                         "Parameter '{}', requested by target '{}', was not found".format(
                             p, get_target_name(flags)
                         )
@@ -404,8 +410,7 @@ class CoreInterface:
         return parameters
 
     def get_toplevel(self, flags):
-        _flags = flags.copy()
-        _flags["is_toplevel"] = True  # FIXME: Is this correct?
+        _flags = derive(flags, is_toplevel=True)  # FIXME: Is this correct?
         self._debug(f"Getting toplevel for flags {str(_flags)}")
         target_name, target = self._get_target(_flags)
 
@@ -415,7 +420,7 @@ class CoreInterface:
             return " ".join(toplevel) if isinstance(toplevel, Sequence) else toplevel
         else:
             s = "{} : Target '{}' has no toplevel"
-            raise SyntaxError(s.format(self.name, target_name))
+            raise CoreParseError(s.format(self.name, target_name))
 
     def get_ttptttg(self, flags):
         self._debug(f"Getting ttptttg for flags {str(flags)}")
@@ -439,7 +444,7 @@ class CoreInterface:
         for gen_name, gen_params in _ttptttg:
             cd_generate = self.get_data(flags).generate
             if gen_name not in cd_generate:
-                raise SyntaxError(
+                raise CoreParseError(
                     "Generator instance '{}', requested by target '{}', was not found".format(
                         gen_name, target_name
                     )
@@ -517,11 +522,7 @@ Targets:
             for name in sorted(cd_targets):
                 targets += "{} : {}\n".format(
                     name.ljust(maxlen),
-                    (
-                        cd_targets[name].description
-                        if "description" in cd_targets[name].description
-                        else "<No description>"
-                    ),
+                    (cd_targets[name].description or "<No description>"),
                 )
         else:
             targets = "<No targets>"
@@ -534,44 +535,15 @@ Targets:
             targets,
         )
 
-    def patch(self, dst_dir):
-        # FIXME: Use native python patch instead
-        patches = self.provider.patches  # ty: ignore[unresolved-attribute]
-        for f in patches:
-            patch_file = os.path.abspath(os.path.join(self.core_root, f))
-            if os.path.isfile(patch_file):
-                self._debug(
-                    "  applying patch file: "
-                    + patch_file
-                    + "\n"
-                    + "                   to: "
-                    + os.path.join(dst_dir)
-                )
-                try:
-                    utils.Launcher(
-                        "git",
-                        [
-                            "apply",
-                            "--unsafe-paths",
-                            "--directory",
-                            os.path.join(dst_dir),
-                            patch_file,
-                        ],
-                    ).run()
-                except OSError:
-                    print("Error: Failed to call external command 'patch'")
-                    return False
-        return True
-
     def setup(self):
+        # Fetching includes patch application (Provider._patch)
         if self.provider:
-            if self.provider.fetch():
-                self.patch(self.files_root)
+            self.provider.fetch()
 
     def _debug(self, msg):
         logger.debug(f"{str(self.name)} : {msg}")
 
-    def _get_target(self, flags: Flags):
+    def _get_target(self, flags: FlagsLike):
         self._debug(f" Resolving target for flags '{str(flags)}'")
 
         cd_target = self.get_target(flags)
@@ -595,7 +567,7 @@ Targets:
 
         for fs in target.get("filesets", []):
             if fs not in cd_filesets:
-                raise SyntaxError(
+                raise CoreParseError(
                     "{} : Fileset '{}', requested by target '{}', was not found".format(
                         self.name, fs, target_name
                     )

@@ -133,6 +133,82 @@ targets:
     assert captured.out == "Running generator\n"
 
 
+def test_run_setup_and_run_without_build_is_rejected(caplog):
+    """
+    `fusesoc run --setup --run` (without `--build`) is an invalid stage
+    combination and must be rejected before any core is looked up.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("run", "--setup", "--run", "dummy-core")
+    assert excinfo.value.code == 1
+    assert "Configure and run without build is invalid" in caplog.text
+
+
+def test_run_with_unknown_core_name_exits_nonzero(caplog):
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("run", "no-such-core")
+    assert excinfo.value.code == 1
+    assert "'no-such-core'" in caplog.text
+    assert "this core was not found" in caplog.text
+
+
+def test_core_info_with_unknown_core_name_exits_nonzero(caplog):
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("core-info", "no-such-core")
+    assert excinfo.value.code == 1
+    assert "'no-such-core'" in caplog.text
+    assert "this core was not found" in caplog.text
+
+
+def test_ambiguous_short_core_name_exits_nonzero(caplog):
+    """
+    A short (name-only) core lookup that matches cores from more than one
+    vendor is reported as ambiguous instead of picking one arbitrarily.
+    """
+    with open("samecore-vendora.core", "w") as core_file:
+        core_file.write("CAPI=2:\nname: vendora:lib:samecore:0.1.0\n")
+    with open("samecore-vendorb.core", "w") as core_file:
+        core_file.write("CAPI=2:\nname: vendorb:lib:samecore:0.1.0\n")
+    _fusesoc("library", "add", ".")
+
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("core-info", "samecore")
+    assert excinfo.value.code == 1
+    assert "'samecore' is ambiguous" in caplog.text
+    assert "'vendora:lib:samecore'" in caplog.text
+    assert "'vendorb:lib:samecore'" in caplog.text
+
+
+def test_main_returns_zero_on_success(capsys):
+    with patch.object(sys, "argv", ["fusesoc", "config", "cache_root"]):
+        assert main() == 0
+    # Sanity check that the command actually did its job (printed the value)
+    assert capsys.readouterr().out.strip()
+
+
+def test_config_with_invalid_key_exits_nonzero(caplog):
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("config", "key_that_does_not_exist")
+    assert excinfo.value.code == 1
+    assert "Invalid config parameter: key_that_does_not_exist" in caplog.text
+
+
+def test_config_with_method_name_is_rejected(caplog):
+    # 'write' is a Config *method*, not a config parameter; only actual
+    # config options are accepted as keys.
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("config", "write")
+    assert excinfo.value.code == 1
+    assert "Invalid config parameter: write" in caplog.text
+
+
+def test_run_with_empty_flag_is_rejected(caplog):
+    with pytest.raises(SystemExit) as excinfo:
+        _fusesoc("run", "--flag=", "dummy-core")
+    assert excinfo.value.code == 1
+    assert "Invalid empty flag name" in caplog.text
+
+
 # region Test fixtures and helper functions
 @pytest.fixture(autouse=True)  # this fixture will be used by all tests implicitly
 def run_in_temporary_directory(request):
