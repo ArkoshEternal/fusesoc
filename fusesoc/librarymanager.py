@@ -57,48 +57,59 @@ class LibraryManager:
         """
         return list(self._libraries.values())
 
-    def update(self, library_names: Iterable[str] | None = None) -> None:
+    def update(self, library_names: Iterable[str] | None = None) -> dict:
         """Update libraries.
 
         Args:
             library_names: List of libraries to update. If not provided or empty, update all libraries.
+
+        Returns:
+            Mapping of library name to the error message for that library,
+            or ``None`` if it updated cleanly. Errors are also logged.
         """
+        results: dict = {}
         if library_names:
             for name in library_names:
                 library: Library | None = self._libraries.get(name)
 
                 if library:
-                    self._update_library(library, force=True)
+                    results[name] = self._update_library(library, force=True)
                 else:
                     logger.warning("%s : Could not find library", name)
+                    results[name] = "Could not find library"
         else:
             for library in self._libraries.values():
-                self._update_library(library, force=False)
+                results[library.name] = self._update_library(library, force=False)
+        return results
 
-    def _update_library(self, library: Library, force: bool = False) -> None:
+    def _update_library(self, library: Library, force: bool = False) -> str | None:
         """Update library.
 
         Args:
             library: Library that will be updated.
             force: Force library update.
+
+        Returns:
+            An error message on failure, ``None`` otherwise (including when
+            the update is skipped). Errors are also logged.
         """
         if library.sync_type == "local":
             logger.info("%s : sync-type is local. Ignoring update", library.name)
-            return
+            return None
 
         if not (library.auto_sync or force):
             logger.info("%s : auto-sync disabled. Ignoring update", library.name)
-            return
+            return None
 
         provider: Provider = get_provider(library.sync_type)
 
         if not library.location:
             logger.error("%s : location to library was not specified", library.name)
-            return
+            return "location to library was not specified"
 
         if not library.sync_uri:
             logger.error("%s : sync-uri to library was not specified", library.name)
-            return
+            return "sync-uri to library was not specified"
 
         if os.path.exists(library.location):
             logger.info("%s : Updating...", library.name)
@@ -111,6 +122,7 @@ class LibraryManager:
                     library.location,
                     e,
                 )
+                return f"Failed to update library: {e}"
         else:
             logger.info(
                 "%s : %s does not exist. Trying to initialize library",
@@ -126,3 +138,4 @@ class LibraryManager:
                     library.location,
                     e,
                 )
+                return f"Failed to initialize library: {e}"

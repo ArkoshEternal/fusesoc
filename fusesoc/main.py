@@ -98,44 +98,19 @@ def list_paths(fs, args):
 
 def add_library(fs, args):
     sync_uri = vars(args)["sync-uri"]
+    is_global = vars(args).get("global", False)
 
-    name = args.name or os.path.basename(sync_uri.rstrip("/"))
-
-    # Check where to store the library
-    if args.location:
-        location = args.location
-    elif vars(args).get("global", False):
-        location = os.path.join(fs.config.library_root, name)
-    else:
-        location = os.path.join("fusesoc_libraries", name)
-
-    sync_type = vars(args).get("sync-type")
-    sync_version = vars(args).get("sync-version")
-
-    # Check if it's a dir. Otherwise fall back to git repo
-    if not sync_type:
-        if os.path.isdir(sync_uri):
-            sync_type = "local"
-        else:
-            sync_type = "git"
-
-    if sync_type == "local":
-        logger.info(
-            "Interpreting sync-uri '{}' as location for local provider.".format(
-                sync_uri
-            )
-        )
-        location = os.path.abspath(sync_uri)
-
-    auto_sync = not args.no_auto_sync
-    library = Library(
-        name,
-        location,
-        sync_type,
+    library = Library.from_uri(
         sync_uri,
-        sync_version,
-        auto_sync,
-        args.sync_submodules,
+        name=args.name,
+        location=args.location,
+        sync_type=vars(args).get("sync-type"),
+        sync_version=vars(args).get("sync-version"),
+        auto_sync=not args.no_auto_sync,
+        sync_submodules=args.sync_submodules,
+        default_root=(
+            os.path.join(fs.config.library_root) if is_global else "fusesoc_libraries"
+        ),
     )
 
     effective_config = Config.resolve_path(args.config)
