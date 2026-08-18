@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 import argparse
+import logging
 import os
 import pathlib
 import shutil
@@ -15,15 +16,7 @@ from pathlib import Path
 
 import argcomplete
 
-from fusesoc import signature
-
-try:
-    from fusesoc.version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-import logging
-
+from fusesoc import __version__, signature
 from fusesoc.config import Config
 from fusesoc.coremanager import DependencyError
 from fusesoc.fusesoc import Fusesoc

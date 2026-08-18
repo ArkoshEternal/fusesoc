@@ -105,6 +105,8 @@ module = [
   "fusesoc.provider.*",
   "fusesoc.parser.*",
   "fusesoc.coremanager",
+  "fusesoc.edalizer",
+  "fusesoc.lockfile",
   "fusesoc.config",
   "fusesoc.librarymanager",
   "fusesoc.fusesoc",

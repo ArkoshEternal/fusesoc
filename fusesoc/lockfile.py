@@ -7,7 +7,7 @@ import pathlib
 import fastjsonschema
 
 import fusesoc.utils
-from fusesoc.version import version
+from fusesoc import __version__
 from fusesoc.vlnv import Vlnv
 
 logger = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ class LockFile:
             core["name"] = str(core["name"])
         lockfile = {
             "lockfile_version": 1,
-            "fusesoc_version": version,
+            "fusesoc_version": __version__,
             "cores": cores,
         }
         fusesoc.utils.yaml_fwrite(self._filepath, lockfile)
